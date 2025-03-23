@@ -461,7 +461,7 @@ class ARWEAPONS_OT_create_detailed_collision(bpy.types.Operator):
             ('CONVEX', "Convex Hull (Stable)", "Create a simplified convex hull - stable even with high-poly models"),
             ('DETAILED', "Detailed (Better Shape)", "Create a more detailed shape that better preserves features - may crash with very high-poly models"),
         ],
-        default='CONVEX'
+        default='DETAILED'
     )
     
     # Parameters for Convex Hull method
