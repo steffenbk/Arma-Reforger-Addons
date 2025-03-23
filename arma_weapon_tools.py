@@ -820,6 +820,89 @@ class ARWEAPONS_OT_create_empties(bpy.types.Operator):
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
 
+
+class ARVEHICLES_OT_separate_components(bpy.types.Operator):
+    """Separate selected components into individual objects for Arma Reforger"""
+    bl_idname = "arvehicles.separate_components"
+    bl_label = "Separate Vehicle Components"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    component_type: bpy.props.EnumProperty(
+        name="Component Type",
+        description="Type of component being separated",
+        items=[
+            ('Sight', "Sight", "Sight component"),
+            ('light', "Light", "Emissive light component"),
+            ('Trigger', "Trigger", "Trigger or movable component"),('Bolt', "Bolt", "Bolt or movable component"),
+            ('accessory', "Accessory", "Optional accessory component"),
+            ('other', "Other", "Other component type"),
+        ],
+        default='Trigger'
+    )
+    
+    custom_name: bpy.props.StringProperty(
+        name="Custom Name",
+        description="Custom name for the separated component",
+        default=""
+    )
+    
+    def execute(self, context):
+        # Check if we're in edit mode with selected faces
+        if context.mode != 'EDIT_MESH':
+            self.report({'ERROR'}, "Must be in Edit Mode with faces selected")
+            return {'CANCELLED'}
+            
+        mesh = context.active_object.data
+        if not mesh.total_face_sel:
+            self.report({'ERROR'}, "No faces selected")
+            return {'CANCELLED'}
+        
+        # Get the active object
+        obj = context.active_object
+        if not obj or obj.type != 'MESH':
+            self.report({'ERROR'}, "No active mesh object")
+            return {'CANCELLED'}
+        
+        # Generate a name for the new object
+        prefix = ""
+        if self.component_type == 'Sight':
+            prefix = "Sight_"
+        elif self.component_type == 'light':
+            prefix = "light_"
+        elif self.component_type == 'Trigger':
+            prefix = "Trigger_"
+        elif self.component_type == 'accessory':
+            prefix = "acc_"
+        elif self.component_type == 'Bolt':
+            prefix = "Bolt_"        
+        new_name = self.custom_name
+        if not new_name:
+            new_name = f"{prefix}{obj.name}"
+        
+        # Separate the selected faces
+        bpy.ops.mesh.separate(type='SELECTED')
+        
+        # Get the newly created object (last selected)
+        new_obj = context.selected_objects[-1]
+        new_obj.name = new_name
+        
+        # Switch back to object mode
+        bpy.ops.object.mode_set(mode='OBJECT')
+        
+        # Select only the new object
+        bpy.ops.object.select_all(action='DESELECT')
+        new_obj.select_set(True)
+        context.view_layer.objects.active = new_obj
+        
+        self.report({'INFO'}, f"Separated component as '{new_name}'")
+        return {'FINISHED'}
+    
+    def invoke(self, context, event):
+        if context.mode != 'EDIT_MESH':
+            self.report({'ERROR'}, "Must be in Edit Mode with faces selected")
+            return {'CANCELLED'}
+        return context.window_manager.invoke_props_dialog(self)
+
 class ARWEAPONS_PT_panel(bpy.types.Panel):
     """Arma Reforger Weapons Panel"""
     bl_label = "AR Weapons"
@@ -871,9 +954,16 @@ class ARWEAPONS_PT_panel(bpy.types.Panel):
         row.operator("arweapons.create_bone", text="Trigger").bone_type = 'w_trigger'
         row.operator("arweapons.create_bone", text="Bolt").bone_type = 'w_bolt'
         
+        box = layout.box()
+        box.label(text="Component Separation", icon='MOD_BUILD')
+        row = box.row(align=True)
+        row.operator("arvehicles.separate_components", text="Separate Selection", icon='UNLINKED')
+        
         # Parenting
         col.separator()
         col.operator("arweapons.parent_to_armature")
+        
+
 
 # Registration
 classes = (
@@ -884,7 +974,7 @@ classes = (
     ARWEAPONS_OT_create_bone,
     ARWEAPONS_OT_parent_to_armature,
     ARWEAPONS_OT_create_empties,
-    ARWEAPONS_PT_panel,
+    ARWEAPONS_PT_panel,ARVEHICLES_OT_separate_components,
 )
 
 def register():
