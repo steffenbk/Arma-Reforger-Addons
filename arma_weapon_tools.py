@@ -470,7 +470,7 @@ class ARWEAPONS_OT_create_detailed_collision(bpy.types.Operator):
         description="Maximum number of faces for convex hull method",
         default=200,
         min=20,
-        max=800
+        max=100000
     )
     
     # Parameters for Detailed method
@@ -479,7 +479,7 @@ class ARWEAPONS_OT_create_detailed_collision(bpy.types.Operator):
         description="Target number of faces for detailed method",
         default=150,
         min=50,
-        max=500
+        max=100000
     )
     
     preserve_details: bpy.props.BoolProperty(
