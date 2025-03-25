@@ -1,932 +1,477 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Mar 25 14:30:45 2025
-
-@author: Steffen & Claude
-"""
+import bpy
+import os
+from bpy.types import PropertyGroup, Operator, Panel
+from bpy.props import (BoolProperty, StringProperty, EnumProperty, 
+                      FloatVectorProperty, FloatProperty, PointerProperty)
 
 bl_info = {
-    "name": "Arma Reforger Building Destruction Tools",
-    "author": "Steffen & Claude",
-    "version": (1, 0),
-    "blender": (2, 93, 0),
-    "location": "View3D > Sidebar > AR Buildings",
-    "description": "Tools for preparing destructible buildings for Arma Reforger",
+    "name": "Arma Reforger Building Exporter",
+    "author": "Your Name",
+    "version": (1, 0, 0),
+    "blender": (3, 0, 0),
+    "location": "View3D > Sidebar > AR Export",
+    "description": "Export tools for Arma Reforger buildings and structures",
     "warning": "",
     "doc_url": "",
-    "category": "Object",
+    "category": "Import-Export",
 }
 
-import bpy
-import math
-import random
-from mathutils import Vector, Matrix
-import bmesh
+class ARBuildingExportSettings(PropertyGroup):
+    """Properties for the Arma Reforger Building Exporter"""
+    
+    # Export Directory
+    export_path: StringProperty(
+        name="Export Path",
+        description="Directory to export building parts to",
+        default="//",
+        subtype='DIR_PATH',
+    )
+    
+    # File naming options
+    use_prefix: BoolProperty(
+        name="Use Prefix",
+        description="Add a prefix to all exported file names",
+        default=False
+    )
+    
+    prefix: StringProperty(
+        name="Prefix",
+        description="Prefix for all exported files",
+        default="bld_"
+    )
+    
+    use_suffix: BoolProperty(
+        name="Use Suffix",
+        description="Add a suffix to all exported file names",
+        default=False
+    )
+    
+    suffix: StringProperty(
+        name="Suffix",
+        description="Suffix for all exported files",
+        default="_lod0"
+    )
+    
+    # FBX Export Settings
+    use_selection: BoolProperty(
+        name="Selected Objects Only",
+        description="Export only selected objects",
+        default=True
+    )
+    
+    use_active_collection: BoolProperty(
+        name="Active Collection Only",
+        description="Export only objects in the active collection",
+        default=False
+    )
+    
+    # Important settings for Arma Reforger
+    use_triangulate: BoolProperty(
+        name="Triangulate",
+        description="Triangulate meshes (recommended for Arma Reforger)",
+        default=True
+    )
+    
+    preserve_edge_orientation: BoolProperty(
+        name="Preserve Edge Orientation",
+        description="Preserve edge orientation (recommended for Arma Reforger)",
+        default=True
+    )
+    
+    use_custom_props: BoolProperty(
+        name="Export Custom Properties",
+        description="Export custom properties (required for LayerPresets)",
+        default=True
+    )
+    
+    apply_modifiers: BoolProperty(
+        name="Apply Modifiers",
+        description="Apply modifiers before export",
+        default=True
+    )
+    
+    # Export modes
+    export_mode: EnumProperty(
+        name="Export Mode",
+        items=[
+            ('INDIVIDUAL', "Individual Objects", "Export each object as a separate file"),
+            ('BY_COLLECTION', "By Collection", "Export each collection as a separate file"),
+            ('BY_MATERIAL', "By Material", "Group objects by material and export each group")
+        ],
+        default='INDIVIDUAL'
+    )
+    
+    # Transform options
+    apply_unit_scale: BoolProperty(
+        name="Apply Unit Scale",
+        description="Apply unit scale for correct sizing in Arma Reforger",
+        default=True
+    )
+    
+    global_scale: FloatProperty(
+        name="Scale",
+        description="Scale factor for the export",
+        default=1.0,
+        min=0.001,
+        max=1000.0
+    )
+    
+    # Axis conversion for Arma Reforger
+    axis_forward: EnumProperty(
+        name="Forward Axis",
+        items=[
+            ('X', "X Forward", ""),
+            ('Y', "Y Forward", ""),
+            ('Z', "Z Forward", ""),
+            ('-X', "-X Forward", ""),
+            ('-Y', "-Y Forward", ""),
+            ('-Z', "-Z Forward", ""),
+        ],
+        default='Z'
+    )
+    
+    axis_up: EnumProperty(
+        name="Up Axis",
+        items=[
+            ('X', "X Up", ""),
+            ('Y', "Y Up", ""),
+            ('Z', "Z Up", ""),
+            ('-X', "-X Up", ""),
+            ('-Y', "-Y Up", ""),
+            ('-Z', "-Z Up", ""),
+        ],
+        default='Y'
+    )
 
-# Default socket names for different building parts
-BUILDING_SOCKET_NAMES = {
-    "wall": "BLD_WALL_SOCKET",
-    "door": "BLD_DOOR_SOCKET", 
-    "window": "BLD_WINDOW_SOCKET",
-    "roof": "BLD_ROOF_SOCKET",
-    "floor": "BLD_FLOOR_SOCKET",
-    "stairs": "BLD_STAIRS_SOCKET",
-    "column": "BLD_COLUMN_SOCKET",
-    "railing": "BLD_RAILING_SOCKET",
-    "beam": "BLD_BEAM_SOCKET",
-    "other": "BLD_PART_SOCKET"
-}
 
-# Building part types for separation and socket creation
-BUILDING_PART_TYPES = [
-    ('wall', "Wall", "Wall component"),
-    ('door', "Door", "Door component"),
-    ('window', "Window", "Window component"),
-    ('roof', "Roof", "Roof component"),
-    ('floor', "Floor", "Floor component"),
-    ('stairs', "Stairs", "Stairs component"),
-    ('column', "Column", "Column or support beam"),
-    ('railing', "Railing", "Railing component"),
-    ('beam', "Beam", "Structural beam"),
-    ('other', "Other", "Other component type"),
-]
-
-# Vehicle part types
-VEHICLE_PART_TYPES = [
-    ('window', "Window", "Vehicle window"),
-    ('light', "Light", "Vehicle light"),
-    ('door', "Door", "Vehicle door"),
-    ('wheel', "Wheel", "Vehicle wheel"),
-    ('engine', "Engine", "Vehicle engine"),
-    ('exhaust', "Exhaust", "Vehicle exhaust"),
-    ('seat', "Seat", "Vehicle seat"),
-    ('steering', "Steering", "Vehicle steering"),
-    ('accessory', "Accessory", "Vehicle accessory"),
-    ('other', "Other", "Other vehicle part"),
-]
-
-# Socket names for vehicle parts
-VEHICLE_SOCKET_NAMES = {
-    "window": "VEHICLE_WINDOW_SOCKET",
-    "light": "VEHICLE_LIGHT_SOCKET",
-    "door": "VEHICLE_DOOR_SOCKET",
-    "wheel": "VEHICLE_WHEEL_SOCKET",
-    "engine": "VEHICLE_ENGINE_SOCKET",
-    "exhaust": "VEHICLE_EXHAUST_SOCKET",
-    "seat": "VEHICLE_SEAT_SOCKET",
-    "steering": "VEHICLE_STEERING_SOCKET",
-    "accessory": "VEHICLE_ACCESSORY_SOCKET",
-    "other": "VEHICLE_PART_SOCKET"
-}
-class ARBUILDINGS_OT_separate_component(bpy.types.Operator):
-    """Separate selected component and add appropriate socket"""
-    bl_idname = "arbuildings.separate_component"
-    bl_label = "Separate Building Component"
+class EXPORT_OT_arma_reforger_building(Operator):
+    """Export building parts for Arma Reforger"""
+    bl_idname = "export.arma_reforger_building"
+    bl_label = "Export Building Parts"
+    bl_description = "Export building parts for Arma Reforger"
     bl_options = {'REGISTER', 'UNDO'}
     
-    component_type: bpy.props.EnumProperty(
-        name="Component Type",
-        description="Type of building component being separated",
-        items=BUILDING_PART_TYPES,
-        default='wall'
-    )
-    
-    custom_name: bpy.props.StringProperty(
-        name="Custom Name",
-        description="Custom name for the separated component",
-        default=""
-    )
-    
-    add_socket: bpy.props.BoolProperty(
-        name="Add Socket",
-        description="Add a socket empty at the component's location",
-        default=True
-    )
-    
-    add_firegeo: bpy.props.BoolProperty(
-        name="Add FireGeo",
-        description="Add a FireGeo collision mesh for the component",
-        default=True
-    )
-    
     def execute(self, context):
-        # Check if we're in edit mode with selected faces
-        if context.mode != 'EDIT_MESH':
-            self.report({'ERROR'}, "Must be in Edit Mode with faces selected")
-            return {'CANCELLED'}
-            
-        mesh = context.active_object.data
-        if not mesh.total_face_sel:
-            self.report({'ERROR'}, "No faces selected")
+        settings = context.scene.ar_building_export
+        
+        # Check if the export path exists
+        export_dir = bpy.path.abspath(settings.export_path)
+        if not os.path.exists(export_dir):
+            self.report({'ERROR'}, f"Export directory does not exist: {export_dir}")
             return {'CANCELLED'}
         
-        # Get the active object
-        obj = context.active_object
-        if not obj or obj.type != 'MESH':
-            self.report({'ERROR'}, "No active mesh object")
-            return {'CANCELLED'}
+        # Store original selection
+        original_selected = context.selected_objects
+        original_active = context.active_object
         
-        # Calculate the center of the selected faces
-        bm = bmesh.from_edit_mesh(mesh)
-        selected_faces = [f for f in bm.faces if f.select]
+        # Determine which objects to export based on settings
+        objects_to_process = []
         
-        if not selected_faces:
-            self.report({'ERROR'}, "No faces selected")
-            return {'CANCELLED'}
-        
-        # Calculate the center of the selected faces
-        center = Vector((0, 0, 0))
-        for face in selected_faces:
-            center += face.calc_center_median()
-        center /= len(selected_faces)
-        
-        # Transform to world space
-        world_center = obj.matrix_world @ center
-        
-        # Generate a name for the new object
-        prefix = f"{self.component_type}_"
-        new_name = self.custom_name if self.custom_name else f"{prefix}{obj.name}"
-        
-        # Separate the selected faces
-        bpy.ops.mesh.separate(type='SELECTED')
-        
-        # Exit edit mode to work with the new object
-        bpy.ops.object.mode_set(mode='OBJECT')
-        
-        # Get the newly created object (last selected)
-        new_obj = context.selected_objects[-1]
-        new_obj.name = new_name
-        
-        # Add component type property
-        new_obj["component_type"] = self.component_type
-        
-        # Create a socket empty if requested
-        if self.add_socket:
-            socket_name = f"{BUILDING_SOCKET_NAMES[self.component_type]}_{len([o for o in bpy.data.objects if BUILDING_SOCKET_NAMES[self.component_type] in o.name]) + 1}"
-            
-            socket = bpy.data.objects.new(socket_name, None)
-            socket.empty_display_type = 'ARROWS'
-            socket.empty_display_size = 0.2
-            socket.location = world_center
-            
-            # Add the socket to the current collection
-            context.collection.objects.link(socket)
-            
-            # Parent the socket to the original building
-            socket.parent = obj
-            
-            # Add socket properties
-            socket["socket_type"] = self.component_type
-            socket["attached_part"] = new_obj.name
-        
-        # Create FireGeo for the component if requested
-        if self.add_firegeo:
-            self._create_firegeo(context, new_obj)
-        
-        # Select only the new object
-        bpy.ops.object.select_all(action='DESELECT')
-        new_obj.select_set(True)
-        context.view_layer.objects.active = new_obj
-        
-        self.report({'INFO'}, f"Separated component '{new_name}'" + (" with independent socket" if self.add_socket else ""))
-        return {'FINISHED'}
-    
-    def _create_firegeo(self, context, obj):
-        """Create a simplified FireGeo collision mesh for the component"""
-        # Store original world matrix
-        original_matrix_world = obj.matrix_world.copy()
-        
-        # Duplicate the object
-        bpy.ops.object.select_all(action='DESELECT')
-        obj.select_set(True)
-        context.view_layer.objects.active = obj
-        bpy.ops.object.duplicate()
-        
-        firegeo_obj = context.active_object
-        firegeo_obj.name = f"UTM_{obj.name}"
-        
-        # Apply decimate modifier to simplify
-        decimate = firegeo_obj.modifiers.new(name="Decimate", type='DECIMATE')
-        decimate.ratio = 0.5  # Adjust as needed
-        bpy.ops.object.modifier_apply(modifier=decimate.name)
-        
-        # Add a slight offset
-        solidify = firegeo_obj.modifiers.new(name="Solidify", type='SOLIDIFY')
-        solidify.thickness = 0.01
-        solidify.offset = 1.0  # Expand outward
-        bpy.ops.object.modifier_apply(modifier=solidify.name)
-        
-        # Create a material for FireGeo
-        if "FireGeo_Material" not in bpy.data.materials:
-            mat = bpy.data.materials.new(name="FireGeo_Material")
-            mat.diffuse_color = (0.0, 0.8, 0.0, 0.5)  # Semi-transparent green
+        if settings.use_selection:
+            objects_to_process = [obj for obj in context.selected_objects if obj.type == 'MESH']
+        elif settings.use_active_collection:
+            objects_to_process = [obj for obj in context.collection.objects if obj.type == 'MESH']
         else:
-            mat = bpy.data.materials["FireGeo_Material"]
+            objects_to_process = [obj for obj in context.scene.objects if obj.type == 'MESH']
         
-        # Assign material
-        firegeo_obj.data.materials.clear()
-        firegeo_obj.data.materials.append(mat)
+        # Filter out objects that are children of other mesh objects in the list
+        # to avoid exporting them twice
+        parent_objects = []
+        for obj in objects_to_process:
+            # Include only parent objects or objects with no parent
+            if obj.parent is None or obj.parent.type != 'MESH' or obj.parent not in objects_to_process:
+                parent_objects.append(obj)
         
-        # Set layer_preset custom property
-        firegeo_obj["layer_preset"] = "Collision_Building"
-        firegeo_obj["usage"] = "FireGeo"
+        objects_to_process = parent_objects
         
-        # Parent to the original component, keeping world transform
-        firegeo_obj.parent = obj
-        firegeo_obj.matrix_world = original_matrix_world
-        
-        return firegeo_obj
-    
-    def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self, width=350)
-    
-    def draw(self, context):
-        layout = self.layout
-        
-        # Component type and name
-        layout.prop(self, "component_type")
-        layout.prop(self, "custom_name")
-        
-        # Socket and FireGeo options
-        layout.prop(self, "add_socket")
-        layout.prop(self, "add_firegeo")
-        
-class ARBUILDINGS_OT_create_building_socket(bpy.types.Operator):
-    """Create a socket empty for building component attachment"""
-    bl_idname = "arbuildings.create_socket"
-    bl_label = "Create Building Socket"
-    bl_options = {'REGISTER', 'UNDO'}
-    
-    socket_type: bpy.props.EnumProperty(
-        name="Socket Type",
-        description="Type of building socket to create",
-        items=BUILDING_PART_TYPES,
-        default='wall'
-    )
-    
-    custom_name: bpy.props.StringProperty(
-        name="Custom Name",
-        description="Custom name for the socket (leave blank for auto-naming)",
-        default=""
-    )
-    
-    snap_to_face: bpy.props.BoolProperty(
-        name="Snap to Face",
-        description="Snap socket to the selected face (if in edit mode)",
-        default=True
-    )
-    
-    align_to_normal: bpy.props.BoolProperty(
-        name="Align to Normal",
-        description="Align socket with the face normal",
-        default=True
-    )
-    
-    def execute(self, context):
-        # Get the active object (building)
-        obj = context.active_object
-        
-        if not obj:
-            self.report({'ERROR'}, "No active object selected")
+        if not objects_to_process:
+            self.report({'ERROR'}, "No mesh objects found to export")
             return {'CANCELLED'}
         
-        # Save current mode to restore it later
-        current_mode = context.mode
+        # Track successfully exported files
+        exported_count = 0
         
-        # Generate socket name
-        if self.custom_name:
-            socket_name = self.custom_name
-        else:
-            socket_name = f"{BUILDING_SOCKET_NAMES[self.socket_type]}_{len([o for o in bpy.data.objects if BUILDING_SOCKET_NAMES[self.socket_type] in o.name]) + 1}"
-        
-        # Create socket empty
-        socket = bpy.data.objects.new(socket_name, None)
-        socket.empty_display_type = 'ARROWS'
-        socket.empty_display_size = 0.2
-        
-        # Default location is at the object's location
-        socket_location = obj.location.copy()
-        socket_rotation = (0, 0, 0)
-        
-        # If in edit mode, snap to the selected face
-        if current_mode == 'EDIT_MESH' and self.snap_to_face:
-            mesh = obj.data
-            bm = bmesh.from_edit_mesh(mesh)
-            selected_faces = [f for f in bm.faces if f.select]
-            
-            if selected_faces:
-                # Get the active face
-                active_face = selected_faces[0]
+        # Process objects based on export mode
+        if settings.export_mode == 'INDIVIDUAL':
+            for obj in objects_to_process:
+                # Deselect all
+                bpy.ops.object.select_all(action='DESELECT')
                 
-                # Calculate face center
-                face_center = active_face.calc_center_median()
-                socket_location = obj.matrix_world @ face_center
-                
-                # Align to normal if requested
-                if self.align_to_normal:
-                    normal = active_face.normal.normalized()
-                    
-                    # Convert local normal to world space
-                    world_normal = obj.matrix_world.to_3x3() @ normal
-                    
-                    # Create rotation matrix from normal
-                    up_vector = Vector((0, 0, 1))
-                    
-                    if abs(world_normal.dot(up_vector)) > 0.99:
-                        # If normal is nearly parallel to up, use X as the rotation axis
-                        rot_axis = Vector((1, 0, 0))
-                    else:
-                        # Otherwise use the cross product
-                        rot_axis = world_normal.cross(up_vector).normalized()
-                    
-                    # Calculate the angle
-                    angle = world_normal.angle(up_vector)
-                    
-                    # Create a rotation matrix
-                    rot_mat = Matrix.Rotation(angle, 4, rot_axis)
-                    
-                    # Convert rotation matrix to euler angles
-                    socket_rotation = rot_mat.to_euler()
-        
-        # Set socket location and rotation
-        socket.location = socket_location
-        socket.rotation_euler = socket_rotation
-        
-        # Add the socket to the current collection
-        context.collection.objects.link(socket)
-        
-        # Parent the socket to the building
-        socket.parent = obj
-        
-        # Add socket properties
-        socket["socket_type"] = self.socket_type
-        
-        # Switch to Object mode if we're in Edit mode
-        if current_mode == 'EDIT_MESH':
-            bpy.ops.object.mode_set(mode='OBJECT')
-            
-        # Now we can safely select objects
-        for obj in context.selected_objects:
-            obj.select_set(False)
-        
-        socket.select_set(True)
-        context.view_layer.objects.active = socket
-        
-        # Restore previous mode if needed - but only if the active object supports edit mode
-        if current_mode == 'EDIT_MESH':
-            # Check if original object is still available and is a mesh
-            if obj and obj.type == 'MESH':
-                # Set original object as active again
+                # Select this object and its children that are meshes
+                self.select_object_with_mesh_children(obj)
                 context.view_layer.objects.active = obj
-                bpy.ops.object.mode_set(mode='EDIT')
-            # Otherwise, stay in object mode
-            else:
-                self.report({'WARNING'}, "Couldn't restore edit mode, original object no longer available")
-        
-        self.report({'INFO'}, f"Created building socket '{socket_name}'")
-        return {'FINISHED'}
-    
-    def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self)
-
-class ARBUILDINGS_OT_create_firegeo_collision(bpy.types.Operator):
-    """Create FireGeo collision mesh for building components"""
-    bl_idname = "arbuildings.create_firegeo_collision"
-    bl_label = "Create Building FireGeo"
-    bl_options = {'REGISTER', 'UNDO'}
-    
-    method: bpy.props.EnumProperty(
-        name="Method",
-        description="Method to create FireGeo collision",
-        items=[
-            ('CONVEX', "Convex Hull (Stable)", "Create a simplified convex hull - stable even with high-poly models"),
-            ('DETAILED', "Detailed (Better Shape)", "Create a more detailed shape that better preserves features"),
-        ],
-        default='CONVEX'
-    )
-    
-    target_faces: bpy.props.IntProperty(
-        name="Target Faces",
-        description="Target number of faces for the collision mesh",
-        default=100,
-        min=20,
-        max=500
-    )
-    
-    offset: bpy.props.FloatProperty(
-        name="Offset",
-        description="Expand the collision mesh outward by this amount (in meters)",
-        default=0.01,
-        min=0.0,
-        max=0.1,
-        step=0.01
-    )
-    
-    def execute(self, context):
-        # Check if objects are selected
-        if len(context.selected_objects) == 0:
-            self.report({'ERROR'}, "Please select building components to create FireGeo for")
-            return {'CANCELLED'}
-        
-        # Find all mesh objects in selection
-        mesh_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
-        
-        if not mesh_objects:
-            self.report({'ERROR'}, "No mesh objects selected")
-            return {'CANCELLED'}
-        
-        # Create FireGeo for each selected mesh
-        created_count = 0
-        for obj in mesh_objects:
-            # Skip if it already has a FireGeo child
-            if any(child.name.startswith("UTM_") for child in obj.children):
-                continue
                 
-            # Create a new object that will become our collision mesh
-            collision_mesh = bpy.data.meshes.new(f"UTM_{obj.name}_mesh")
-            fire_geo_obj = bpy.data.objects.new(f"UTM_{obj.name}", collision_mesh)
-            context.collection.objects.link(fire_geo_obj)
+                # Generate filename
+                filename = self.generate_filename(obj.name, settings)
+                filepath = os.path.join(export_dir, filename)
+                
+                # Export the object with its children
+                self.export_fbx(filepath, settings)
+                exported_count += 1
+                
+        elif settings.export_mode == 'BY_COLLECTION':
+            # Get all collections with objects to process
+            collections_dict = {}
             
-            # Based on the selected method, create different collision
-            if self.method == 'CONVEX':
-                self._create_convex_hull(context, obj, fire_geo_obj)
-            else:  # DETAILED
-                self._create_detailed(context, obj, fire_geo_obj)
+            for obj in objects_to_process:
+                for collection in obj.users_collection:
+                    if collection not in collections_dict:
+                        collections_dict[collection] = []
+                    collections_dict[collection].append(obj)
             
-            # Parent to the original object
-            fire_geo_obj.parent = obj
-            
-            # Create and assign material
-            if "FireGeo_Material" not in bpy.data.materials:
-                mat = bpy.data.materials.new(name="FireGeo_Material")
-                mat.diffuse_color = (0.0, 0.8, 0.0, 0.5)  # Semi-transparent green
-            else:
-                mat = bpy.data.materials["FireGeo_Material"]
-            
-            # Remove any existing materials and assign the new one
-            fire_geo_obj.data.materials.clear()
-            fire_geo_obj.data.materials.append(mat)
-            
-            # Set layer_preset custom property
-            fire_geo_obj["layer_preset"] = "Collision_Building"
-            fire_geo_obj["usage"] = "FireGeo"
-            
-            created_count += 1
-        
-        # Report success
-        if created_count > 0:
-            self.report({'INFO'}, f"Created {created_count} FireGeo collision meshes")
-        else:
-            self.report({'INFO'}, "No new FireGeo meshes created (components might already have them)")
-            
-        return {'FINISHED'}
-    
-    def _create_convex_hull(self, context, source_obj, fire_geo_obj):
-        """Create a convex hull based FireGeo collision"""
-        # Get vertices from the source object
-        all_verts = []
-        
-        # If too many vertices, sample them to prevent crashes
-        if len(source_obj.data.vertices) > 1000:
-            sample_rate = min(1.0, 500 / len(source_obj.data.vertices))
-            for i, vert in enumerate(source_obj.data.vertices):
-                if i % int(1/sample_rate) == 0:  # Sample vertices
-                    world_co = source_obj.matrix_world @ vert.co
-                    all_verts.append(world_co)
-        else:
-            for vert in source_obj.data.vertices:
-                world_co = source_obj.matrix_world @ vert.co
-                all_verts.append(world_co)
-        
-        # Create a temporary mesh for the convex hull
-        temp_mesh = bpy.data.meshes.new("temp_hull_mesh")
-        temp_obj = bpy.data.objects.new("temp_hull", temp_mesh)
-        context.collection.objects.link(temp_obj)
-        
-        # Fill the temporary mesh with our vertices
-        temp_mesh.from_pydata(all_verts, [], [])
-        temp_mesh.update()
-        
-        # Make the temp object active
-        bpy.ops.object.select_all(action='DESELECT')
-        temp_obj.select_set(True)
-        context.view_layer.objects.active = temp_obj
-        
-        # Create convex hull
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.mesh.select_all(action='SELECT')
-        bpy.ops.mesh.convex_hull()
-        
-        # Return to object mode
-        bpy.ops.object.mode_set(mode='OBJECT')
-        
-        # Apply decimate to the convex hull if needed
-        if len(temp_obj.data.polygons) > self.target_faces:
-            decimate = temp_obj.modifiers.new(name="Decimate", type='DECIMATE')
-            decimate.ratio = self.target_faces / len(temp_obj.data.polygons)
-            bpy.ops.object.modifier_apply(modifier=decimate.name)
-        
-        # Add offset if needed
-        if self.offset > 0:
-            # Apply solidify modifier
-            solidify = temp_obj.modifiers.new(name="Solidify", type='SOLIDIFY')
-            solidify.thickness = self.offset
-            solidify.offset = 1.0  # Expand outward only
-            bpy.ops.object.modifier_apply(modifier=solidify.name)
-        
-        # Transfer data to our fire geo object
-        fire_geo_obj.data = temp_obj.data.copy()
-        
-        # Remove the temporary object
-        bpy.data.objects.remove(temp_obj)
-    
-    def _create_detailed(self, context, source_obj, fire_geo_obj):
-        """Create a detailed FireGeo collision that preserves more building features"""
-        # Duplicate the source object mesh
-        temp_mesh = source_obj.data.copy()
-        temp_obj = bpy.data.objects.new("temp_detailed", temp_mesh)
-        context.collection.objects.link(temp_obj)
-        
-        # Select and make active the temporary object
-        bpy.ops.object.select_all(action='DESELECT')
-        temp_obj.select_set(True)
-        context.view_layer.objects.active = temp_obj
-        
-        # Apply decimate modifier for simplification
-        decimate = temp_obj.modifiers.new(name="Decimate", type='DECIMATE')
-        current_faces = len(temp_obj.data.polygons)
-        decimate.ratio = min(1.0, self.target_faces / max(1, current_faces))
-        bpy.ops.object.modifier_apply(modifier=decimate.name)
-        
-        # If offset is specified, add a solidify modifier
-        if self.offset > 0:
-            # Apply solidify modifier
-            solidify = temp_obj.modifiers.new(name="Solidify", type='SOLIDIFY')
-            solidify.thickness = self.offset
-            solidify.offset = 1.0  # Expand outward only
-            bpy.ops.object.modifier_apply(modifier=solidify.name)
-        
-        # Enter edit mode to clean up the mesh
-        bpy.ops.object.mode_set(mode='EDIT')
-        
-        # Select all vertices
-        bpy.ops.mesh.select_all(action='SELECT')
-        
-        # Remove doubles to clean up the mesh
-        bpy.ops.mesh.remove_doubles(threshold=0.001)
-        
-        # Return to object mode
-        bpy.ops.object.mode_set(mode='OBJECT')
-        
-        # Transfer data to the FireGeo object
-        fire_geo_obj.data = temp_obj.data.copy()
-        
-        # Remove the temporary object
-        bpy.data.objects.remove(temp_obj)
-    
-    def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self)
-
-class ARBUILDINGS_OT_create_dependency_link(bpy.types.Operator):
-    """Create structural dependency between building parts"""
-    bl_idname = "arbuildings.create_dependency"
-    bl_label = "Create Structural Dependency"
-    bl_options = {'REGISTER', 'UNDO'}
-    
-    dependency_type: bpy.props.EnumProperty(
-        name="Dependency Type",
-        description="Type of structural dependency",
-        items=[
-            ('support', "Support", "Selected part supports dependent part"),
-            ('attachment', "Attachment", "Selected part is attached to dependent part"),
-            ('adjacent', "Adjacent", "Parts are adjacent and affect each other"),
-        ],
-        default='support'
-    )
-    
-    def execute(self, context):
-        selected_objects = context.selected_objects
-        
-        # Need at least two objects selected
-        if len(selected_objects) < 2:
-            self.report({'ERROR'}, "Please select at least two building parts")
-            return {'CANCELLED'}
-        
-        # The active object is the supporting/main part
-        active_obj = context.active_object
-        if not active_obj or active_obj not in selected_objects:
-            self.report({'ERROR'}, "No active object among selected objects")
-            return {'CANCELLED'}
-        
-        # Create dependencies
-        dependency_count = 0
-        for obj in selected_objects:
-            if obj != active_obj:
-                # Add dependency property to the dependent object
-                if "dependencies" not in obj:
-                    obj["dependencies"] = []
+            # Export each collection separately
+            for collection, objects in collections_dict.items():
+                # Deselect all
+                bpy.ops.object.select_all(action='DESELECT')
                 
-                # Create a new dependency
-                dependency = {
-                    "supporting_part": active_obj.name,
-                    "dependency_type": self.dependency_type
-                }
+                # Select objects in this collection with their children
+                for obj in objects:
+                    self.select_object_with_mesh_children(obj)
                 
-                # Check if this dependency already exists
-                existing_deps = obj["dependencies"]
-                if isinstance(existing_deps, list):
-                    # Check if already exists
-                    if not any(d.get("supporting_part") == active_obj.name for d in existing_deps):
-                        existing_deps.append(dependency)
-                        obj["dependencies"] = existing_deps
-                        dependency_count += 1
-                else:
-                    # Initialize as a new list
-                    obj["dependencies"] = [dependency]
-                    dependency_count += 1
-                
-                # Also update the supporting part to know it supports something
-                if "supports" not in active_obj:
-                    active_obj["supports"] = []
-                
-                # Add the supported object to the list
-                support_info = {
-                    "supported_part": obj.name,
-                    "dependency_type": self.dependency_type
-                }
-                
-                # Check if this support relationship already exists
-                existing_supports = active_obj["supports"]
-                if isinstance(existing_supports, list):
-                    if not any(s.get("supported_part") == obj.name for s in existing_supports):
-                        existing_supports.append(support_info)
-                        active_obj["supports"] = existing_supports
-                else:
-                    active_obj["supports"] = [support_info]
-        
-        if dependency_count > 0:
-            self.report({'INFO'}, f"Created {dependency_count} dependencies")
-        else:
-            self.report({'WARNING'}, "No new dependencies created, they may already exist")
-        
-        return {'FINISHED'}
-    
-    def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self)
-    
-class ARBUILDINGS_OT_visualize_dependencies(bpy.types.Operator):
-    """Create visual indicators of structural dependencies"""
-    bl_idname = "arbuildings.visualize_dependencies"
-    bl_label = "Visualize Dependencies"
-    bl_options = {'REGISTER', 'UNDO'}
-    
-    def execute(self, context):
-        # Get all objects in the scene
-        all_objects = context.scene.objects
-        
-        # Find all building parts with dependencies
-        parts_with_deps = [obj for obj in all_objects if "dependencies" in obj and obj.get("dependencies")]
-        
-        if not parts_with_deps:
-            self.report({'INFO'}, "No building parts with dependencies found")
-            return {'CANCELLED'}
-        
-        # Create a new collection for visualizers if it doesn't exist
-        collection_name = "Dependency_Visualizers"
-        if collection_name in bpy.data.collections:
-            vis_collection = bpy.data.collections[collection_name]
-            # Clear existing visualizers
-            for obj in list(vis_collection.objects):
-                bpy.data.objects.remove(obj)
-        else:
-            vis_collection = bpy.data.collections.new(collection_name)
-            context.scene.collection.children.link(vis_collection)
-        
-        # Create a material for the dependency visualizers
-        if "Dependency_Material" not in bpy.data.materials:
-            mat = bpy.data.materials.new(name="Dependency_Material")
-            mat.diffuse_color = (1.0, 0.6, 0.0, 0.5)  # Semi-transparent orange
-        else:
-            mat = bpy.data.materials["Dependency_Material"]
-        
-        # Create visualizers for each dependency
-        created_count = 0
-        for part in parts_with_deps:
-            dependencies = part.get("dependencies")
-            if not dependencies or not isinstance(dependencies, list):
-                continue
-                
-            for dep in dependencies:
-                if not isinstance(dep, dict):
-                    continue
-                
-                supporting_name = dep.get("supporting_part")
-                if not supporting_name:
-                    continue
-                
-                # Find the supporting part
-                supporting_part = next((obj for obj in all_objects if obj.name == supporting_name), None)
-                if not supporting_part:
-                    continue
-                
-                # Create a line between the parts
-                visualizer = self._create_dependency_line(part, supporting_part, dep.get("dependency_type", "support"))
-                
-                if visualizer:
-                    # Add to collection
-                    vis_collection.objects.link(visualizer)
+                if context.selected_objects:
+                    context.view_layer.objects.active = context.selected_objects[0]
                     
-                    # Assign material
-                    visualizer.data.materials.append(mat)
+                    # Generate filename
+                    filename = self.generate_filename(collection.name, settings)
+                    filepath = os.path.join(export_dir, filename)
                     
-                    created_count += 1
+                    # Export the collection
+                    self.export_fbx(filepath, settings)
+                    exported_count += 1
+                
+        elif settings.export_mode == 'BY_MATERIAL':
+            # Group objects by material
+            material_dict = {}
+            
+            for obj in objects_to_process:
+                if len(obj.material_slots) > 0:
+                    # Use the first material as the grouping key
+                    mat = obj.material_slots[0].material
+                    if mat:
+                        mat_name = mat.name
+                        if mat_name not in material_dict:
+                            material_dict[mat_name] = []
+                        material_dict[mat_name].append(obj)
+                else:
+                    # Handle objects with no material
+                    if "No_Material" not in material_dict:
+                        material_dict["No_Material"] = []
+                    material_dict["No_Material"].append(obj)
+            
+            # Export each material group separately
+            for mat_name, objects in material_dict.items():
+                # Deselect all
+                bpy.ops.object.select_all(action='DESELECT')
+                
+                # Select objects with this material and their children
+                for obj in objects:
+                    self.select_object_with_mesh_children(obj)
+                
+                if context.selected_objects:
+                    context.view_layer.objects.active = context.selected_objects[0]
+                    
+                    # Generate filename
+                    filename = self.generate_filename(mat_name, settings)
+                    filepath = os.path.join(export_dir, filename)
+                    
+                    # Export the material group
+                    self.export_fbx(filepath, settings)
+                    exported_count += 1
         
-        if created_count > 0:
-            self.report({'INFO'}, f"Created {created_count} dependency visualizers")
-        else:
-            self.report({'WARNING'}, "No dependency visualizers created")
+        # Restore original selection
+        bpy.ops.object.select_all(action='DESELECT')
+        for obj in original_selected:
+            obj.select_set(True)
+        if original_active:
+            context.view_layer.objects.active = original_active
         
+        self.report({'INFO'}, f"Successfully exported {exported_count} FBX files")
         return {'FINISHED'}
     
-    def _create_dependency_line(self, dependent_part, supporting_part, dependency_type):
-        """Create a line object between dependent and supporting parts"""
-        # Calculate centers
-        dep_center = dependent_part.location
-        sup_center = supporting_part.location
+    def select_object_with_mesh_children(self, obj):
+        """Select an object and any mesh children it has (like FireGeo meshes)"""
+        # Select the main object
+        obj.select_set(True)
         
-        # Calculate midpoint
-        midpoint = (dep_center + sup_center) / 2
+        # Select all direct children that are mesh objects
+        for child in obj.children:
+            if child.type == 'MESH':
+                # Check if this is likely a FireGeo object
+                if child.name.startswith("UTM_") or "FireGeo" in child.name or (
+                    "usage" in child and child["usage"] == "FireGeo"):
+                    child.select_set(True)
+    
+    def generate_filename(self, base_name, settings):
+        """Generate a filename based on settings"""
+        clean_name = bpy.path.clean_name(base_name)
         
-        # Calculate distance
-        distance = (dep_center - sup_center).length
-        
-        # Create a cylinder between the points
-        bpy.ops.mesh.primitive_cylinder_add(
-            radius=0.02,
-            depth=distance,
-            location=midpoint
+        if settings.use_prefix:
+            clean_name = settings.prefix + clean_name
+            
+        if settings.use_suffix:
+            clean_name = clean_name + settings.suffix
+            
+        return clean_name + ".fbx"
+    
+    def export_fbx(self, filepath, settings):
+        """Export the selected objects to FBX with proper Arma Reforger settings"""
+        # FBX export with optimized settings for Arma Reforger
+        bpy.ops.export_scene.fbx(
+            filepath=filepath,
+            use_selection=True,
+            use_active_collection=False,
+            global_scale=settings.global_scale,
+            apply_unit_scale=settings.apply_unit_scale,
+            apply_scale_options='FBX_SCALE_ALL',
+            use_space_transform=True,
+            bake_space_transform=False,
+            object_types={'MESH', 'EMPTY'},
+            use_mesh_modifiers=settings.apply_modifiers,
+            mesh_smooth_type='FACE',
+            use_mesh_edges=False,
+            use_tspace=False,
+            use_custom_props=settings.use_custom_props,
+            add_leaf_bones=False,
+            primary_bone_axis='Y',
+            secondary_bone_axis='X',
+            use_armature_deform_only=True,
+            armature_nodetype='NULL',
+            axis_forward=settings.axis_forward,
+            axis_up=settings.axis_up,
+            path_mode='AUTO',
+            embed_textures=False,
+            batch_mode='OFF',
+            use_metadata=True,
+            # Arma Reforger specific settings
+            use_triangles=settings.use_triangulate
         )
-        
-        # Get the created cylinder
-        cylinder = bpy.context.active_object
-        
-        # Name based on parts and dependency type
-        cylinder.name = f"Dependency_{dependent_part.name}_to_{supporting_part.name}"
-        
-        # Rotate to point from dependent to supporting
-        direction = (sup_center - dep_center).normalized()
-        
-        # Calculate rotation to align cylinder with the direction
-        # Default cylinder is aligned with Z axis, so we need to rotate it to align with our direction
-        z_axis = Vector((0, 0, 1))
-        rotation_axis = z_axis.cross(direction).normalized()
-        
-        if rotation_axis.length > 0.001:  # Avoid zero-length rotation axis
-            angle = z_axis.angle(direction)
-            cylinder.rotation_euler = Matrix.Rotation(angle, 4, rotation_axis).to_euler()
-        
-        # Set properties to identify the visualizer
-        cylinder["vis_type"] = "dependency"
-        cylinder["dependent_part"] = dependent_part.name
-        cylinder["supporting_part"] = supporting_part.name
-        cylinder["dependency_type"] = dependency_type
-        
-        return cylinder
-    
-class ARVEHICLES_OT_create_vehicle_socket(bpy.types.Operator):
-    """Create a socket empty for vehicle component attachment"""
-    bl_idname = "arvehicles.create_socket"
-    bl_label = "Create Vehicle Socket"
-    bl_options = {'REGISTER', 'UNDO'}
-    
-    socket_type: bpy.props.EnumProperty(
-        name="Socket Type",
-        description="Type of vehicle socket to create",
-        items=VEHICLE_PART_TYPES,
-        default='wheel'
-    )
-    
-    custom_name: bpy.props.StringProperty(
-        name="Custom Name",
-        description="Custom name for the socket (leave blank for auto-naming)",
-        default=""
-    )
-    
-    snap_to_face: bpy.props.BoolProperty(
-        name="Snap to Face",
-        description="Snap socket to the selected face (if in edit mode)",
-        default=True
-    )
-    
-    def execute(self, context):
-        # Get the active object (vehicle)
-        obj = context.active_object
-        
-        if not obj:
-            self.report({'ERROR'}, "No active object selected")
-            return {'CANCELLED'}
-        
-        # Generate socket name
-        if self.custom_name:
-            socket_name = self.custom_name
-        else:
-            socket_name = f"{VEHICLE_SOCKET_NAMES[self.socket_type]}_{len([o for o in bpy.data.objects if VEHICLE_SOCKET_NAMES[self.socket_type] in o.name]) + 1}"
-        
-        # Create socket empty
-        socket = bpy.data.objects.new(socket_name, None)
-        socket.empty_display_type = 'ARROWS'
-        socket.empty_display_size = 0.2
-        
-        # Default location is at the object's location
-        socket.location = obj.location.copy()
-        
-        # If in edit mode, try to snap to the selected face
-        if context.mode == 'EDIT_MESH' and self.snap_to_face:
-            mesh = obj.data
-            bm = bmesh.from_edit_mesh(mesh)
-            selected_faces = [f for f in bm.faces if f.select]
-            
-            if selected_faces:
-                # Get the active face
-                active_face = selected_faces[0]
-                
-                # Calculate face center
-                face_center = active_face.calc_center_median()
-                socket.location = obj.matrix_world @ face_center
-        
-        # Add the socket to the current collection
-        context.collection.objects.link(socket)
-        
-        # Parent the socket to the vehicle
-        socket.parent = obj
-        
-        # Add socket properties
-        socket["socket_type"] = self.socket_type
-        
-        # Select the socket
-        bpy.ops.object.select_all(action='DESELECT')
-        socket.select_set(True)
-        context.view_layer.objects.active = socket
-        
-        self.report({'INFO'}, f"Created vehicle socket '{socket_name}'")
-        return {'FINISHED'}
-    
-    def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self)
+        return True
 
-class ARBUILDINGS_PT_panel(bpy.types.Panel):
-    """Arma Reforger Building Destruction Panel"""
-    bl_label = "AR Buildings"
-    bl_idname = "ARBUILDINGS_PT_panel"
+
+class VIEW3D_PT_arma_reforger_building_export(Panel):
+    """Panel for Arma Reforger Building Export"""
+    bl_label = "AR Building Export"
+    bl_idname = "VIEW3D_PT_arma_reforger_building_export"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'AR Buildings'
+    bl_category = "AR Export"
+    
+    def draw(self, context):
+        layout = self.layout
+        settings = context.scene.ar_building_export
+        
+        # Main export button
+        row = layout.row()
+        row.scale_y = 1.5
+        row.operator("export.arma_reforger_building", icon='EXPORT')
+        
+        # Export path
+        box = layout.box()
+        box.label(text="Export Location", icon='FOLDER_REDIRECT')
+        box.prop(settings, "export_path", text="")
+        
+        # File naming options
+        box = layout.box()
+        box.label(text="File Naming", icon='FILE')
+        
+        # Prefix
+        row = box.row()
+        row.prop(settings, "use_prefix", text="")
+        sub = row.row()
+        sub.enabled = settings.use_prefix
+        sub.prop(settings, "prefix")
+        
+        # Suffix
+        row = box.row()
+        row.prop(settings, "use_suffix", text="")
+        sub = row.row()
+        sub.enabled = settings.use_suffix
+        sub.prop(settings, "suffix")
+        
+        # Export Mode
+        box = layout.box()
+        box.label(text="Export Settings", icon='SETTINGS')
+        box.prop(settings, "export_mode")
+        
+        # Object selection options
+        box.separator()
+        row = box.row()
+        row.prop(settings, "use_selection", text="Selected Only")
+        row = box.row()
+        row.enabled = not settings.use_selection
+        row.prop(settings, "use_active_collection", text="Active Collection Only")
+        
+        # Arma Reforger critical settings
+        box = layout.box()
+        box.label(text="Arma Reforger Settings", icon='MOD_ARMATURE')
+        box.prop(settings, "use_triangulate")
+        box.prop(settings, "preserve_edge_orientation")
+        box.prop(settings, "use_custom_props")
+        box.prop(settings, "apply_modifiers")
+        
+        # Transform settings
+        box = layout.box()
+        box.label(text="Transform", icon='ORIENTATION_GLOBAL')
+        box.prop(settings, "global_scale")
+        box.prop(settings, "apply_unit_scale")
+        box.prop(settings, "axis_forward")
+        box.prop(settings, "axis_up")
+
+
+class VIEW3D_PT_arma_reforger_building_help(Panel):
+    """Help panel for Arma Reforger Building Export"""
+    bl_label = "Help & Tips"
+    bl_idname = "VIEW3D_PT_arma_reforger_building_help"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = "AR Buildings"
+    bl_options = {'DEFAULT_CLOSED'}
     
     def draw(self, context):
         layout = self.layout
         
-        # Component Separation
         box = layout.box()
-        box.label(text="Component Tools", icon='MOD_BUILD')
-        row = box.row(align=True)
-        row.operator("arbuildings.separate_component", text="Separate Component", icon='UNLINKED')
-        row = box.row(align=True)
-        row.operator("arbuildings.create_socket", text="Create Socket", icon='EMPTY_AXIS')
+        box.label(text="Critical Settings for Arma Reforger:", icon='ERROR')
+        col = box.column(align=True)
+        col.label(text="• Binary format in 2014/2015")
+        col.label(text="• Triangulation enabled")
+        col.label(text="• Preserve Edge Orientation")
+        col.label(text="• Custom Properties enabled")
         
-        # Collision Creation
         box = layout.box()
-        box.label(text="Collision Tools", icon='MESH_CUBE')
-        box.operator("arbuildings.create_firegeo_collision", icon='MESH_GRID')
+        box.label(text="Export Modes:", icon='PRESET')
+        col = box.column(align=True)
+        col.label(text="Individual: Export each object separately")
+        col.label(text="By Collection: Export objects grouped by collection")
+        col.label(text="By Material: Export objects grouped by material")
         
-        # Dependency Management
         box = layout.box()
-        box.label(text="Structural Dependencies", icon='CONSTRAINT')
-        box.operator("arbuildings.create_dependency", icon='LINKED')
-        box.operator("arbuildings.visualize_dependencies", icon='HIDE_OFF')
-        
-        # Vehicle attachment points
-        box = layout.box()
-        box.label(text="Vehicle Attachment Points", icon='EMPTY_DATA')
-        box.operator("arvehicles.create_socket", icon='EMPTY_ARROWS')
+        box.label(text="Recommended Workflow:", icon='SEQUENCE')
+        col = box.column(align=True)
+        col.label(text="1. Organize building parts into collections")
+        col.label(text="2. Apply proper materials to each part")
+        col.label(text="3. Set up custom properties if needed")
+        col.label(text="4. Select the parts to export")
+        col.label(text="5. Choose export mode and run export")
+
 
 # Registration
 classes = (
-    ARBUILDINGS_OT_separate_component,
-    ARBUILDINGS_OT_create_building_socket,
-    ARBUILDINGS_OT_create_firegeo_collision,
-    ARBUILDINGS_OT_create_dependency_link,
-    ARBUILDINGS_OT_visualize_dependencies,
-    ARVEHICLES_OT_create_vehicle_socket,
-    ARBUILDINGS_PT_panel,
+    ARBuildingExportSettings,
+    EXPORT_OT_arma_reforger_building,
+    VIEW3D_PT_arma_reforger_building_export,
+    VIEW3D_PT_arma_reforger_building_help
 )
 
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
+    bpy.types.Scene.ar_building_export = PointerProperty(type=ARBuildingExportSettings)
 
 def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
+    del bpy.types.Scene.ar_building_export
 
 if __name__ == "__main__":
     register()
