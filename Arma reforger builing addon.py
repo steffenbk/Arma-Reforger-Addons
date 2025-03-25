@@ -78,7 +78,6 @@ VEHICLE_SOCKET_NAMES = {
     "accessory": "VEHICLE_ACCESSORY_SOCKET",
     "other": "VEHICLE_PART_SOCKET"
 }
-
 class ARBUILDINGS_OT_separate_component(bpy.types.Operator):
     """Separate selected component and add appropriate socket"""
     bl_idname = "arbuildings.separate_component"
@@ -158,9 +157,6 @@ class ARBUILDINGS_OT_separate_component(bpy.types.Operator):
         new_obj = context.selected_objects[-1]
         new_obj.name = new_name
         
-        # Store the original world matrix before any parenting
-        original_matrix_world = new_obj.matrix_world.copy()
-        
         # Add component type property
         new_obj["component_type"] = self.component_type
         
@@ -179,16 +175,6 @@ class ARBUILDINGS_OT_separate_component(bpy.types.Operator):
             # Parent the socket to the original building
             socket.parent = obj
             
-            # Parent the new component to the socket (keeping world transform)
-            # First clear parent if any
-            bpy.ops.object.select_all(action='DESELECT')
-            new_obj.select_set(True)
-            context.view_layer.objects.active = new_obj
-            
-            # Parent to socket but keep transform
-            new_obj.parent = socket
-            new_obj.matrix_world = original_matrix_world
-            
             # Add socket properties
             socket["socket_type"] = self.component_type
             socket["attached_part"] = new_obj.name
@@ -202,7 +188,7 @@ class ARBUILDINGS_OT_separate_component(bpy.types.Operator):
         new_obj.select_set(True)
         context.view_layer.objects.active = new_obj
         
-        self.report({'INFO'}, f"Separated component '{new_name}' with socket")
+        self.report({'INFO'}, f"Separated component '{new_name}'" + (" with independent socket" if self.add_socket else ""))
         return {'FINISHED'}
     
     def _create_firegeo(self, context, obj):
