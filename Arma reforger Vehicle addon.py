@@ -629,6 +629,10 @@ class ARVEHICLES_OT_create_ucx_collision(bpy.types.Operator):
     )
     
     def execute(self, context):
+        # Make sure we're in Object mode
+        if context.mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+            
         # Check if objects are selected
         if len(context.selected_objects) == 0:
             self.report({'ERROR'}, "Please select the vehicle meshes")
@@ -662,8 +666,11 @@ class ARVEHICLES_OT_create_ucx_collision(bpy.types.Operator):
         temp_mesh.from_pydata(all_verts, [], [])
         temp_mesh.update()
         
+        # Deselect all objects
+        for obj in context.selected_objects:
+            obj.select_set(False)
+            
         # Select the temporary object
-        bpy.ops.object.select_all(action='DESELECT')
         temp_obj.select_set(True)
         context.view_layer.objects.active = temp_obj
         
@@ -709,8 +716,9 @@ class ARVEHICLES_OT_create_ucx_collision(bpy.types.Operator):
         # Assign material
         collision_obj.data.materials.append(mat)
         
-        # Select the collision object
-        bpy.ops.object.select_all(action='DESELECT')
+        # Deselect all objects and select the collision object
+        for obj in context.selected_objects:
+            obj.select_set(False)
         collision_obj.select_set(True)
         context.view_layer.objects.active = collision_obj
         
