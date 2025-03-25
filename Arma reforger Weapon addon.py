@@ -12,7 +12,8 @@ bl_info = {
 
 import bpy
 import math
-from mathutils import Vector
+from mathutils import Vector, Matrix  # Added Matrix import here
+import bmesh
 
 # Standard dimensions for Arma Reforger weapons
 STANDARD_WEAPON_LENGTH = 0.7  # From barrel_muzzle to back of weapon
@@ -33,7 +34,174 @@ EMPTY_LOCATIONS = {
     "barrel_muzzle": (0, 0.35, 0.065),
     "eye": (0, 0.1, 0.085),
 }
+SOCKET_NAMES = {
+    "barrel_chamber": "BARREL_CHAMBER_SOCKET",
+    "barrel_muzzle": "BARREL_MUZZLE_SOCKET", 
+    "eye": "EYE_SOCKET",
+    "slot_barrel_muzzle": "SLOT_BARREL_MUZZLE_SOCKET",
+    "slot_bayonet": "SLOT_BAYONET_SOCKET",
+    "slot_dovetail": "SLOT_DOVETAIL_SOCKET",
+    "slot_magazine": "SLOT_MAGAZINE_SOCKET",
+    "slot_underbarrel": "SLOT_UNDERBARREL_SOCKET",
+    "snap_hand_left": "SNAP_HAND_LEFT_SOCKET",
+    "snap_hand_right": "SNAP_HAND_RIGHT_SOCKET"
+}
 
+# Socket types for weapons
+SOCKET_TYPES = [
+    ('barrel_chamber', "Barrel Chamber", "Barrel chamber attachment point"),
+    ('barrel_muzzle', "Barrel Muzzle", "Barrel muzzle attachment point"),
+    ('eye', "Eye", "Eye/sight alignment point"),
+    ('slot_barrel_muzzle', "Slot Barrel Muzzle", "Barrel muzzle slot attachment"),
+    ('slot_bayonet', "Slot Bayonet", "Bayonet attachment slot"),
+    ('slot_dovetail', "Slot Dovetail", "Dovetail attachment slot"),
+    ('slot_magazine', "Slot Magazine", "Magazine attachment slot"),
+    ('slot_underbarrel', "Slot Underbarrel", "Underbarrel attachment slot"),
+    ('snap_hand_left', "Snap Hand Left", "Left hand position"),
+    ('snap_hand_right', "Snap Hand Right", "Right hand position")
+]
+
+
+
+
+class CREATE_SOCKET_OT_create_socket(bpy.types.Operator):
+    """Create a weapon attachment socket at selected face or object location"""
+    bl_idname = "object.create_weapon_socket"  # Changed to indicate weapon sockets
+    bl_label = "Create Weapon Socket"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    socket_type: bpy.props.EnumProperty(
+        name="Socket Type",
+        description="Type of weapon socket to create",
+        items=SOCKET_TYPES,
+        default='barrel_muzzle'  # Changed default to a weapon socket
+    )
+    
+    custom_name: bpy.props.StringProperty(
+        name="Custom Name",
+        description="Custom name for the socket (leave blank for auto-naming)",
+        default=""
+    )
+    
+    snap_to_face: bpy.props.BoolProperty(
+        name="Snap to Face",
+        description="Snap socket to the selected face (if in edit mode)",
+        default=True
+    )
+    
+    align_to_normal: bpy.props.BoolProperty(
+        name="Align to Normal",
+        description="Align socket with the face normal",
+        default=True
+    )
+    
+    def execute(self, context):
+        # Get the active object
+        obj = context.active_object
+        
+        if not obj:
+            self.report({'ERROR'}, "No active object selected")
+            return {'CANCELLED'}
+        
+        # Save current mode to restore it later
+        current_mode = context.mode
+        
+        # Generate socket name
+        if self.custom_name:
+            socket_name = self.custom_name
+        else:
+            socket_name = f"{SOCKET_NAMES[self.socket_type]}_{len([o for o in bpy.data.objects if SOCKET_NAMES[self.socket_type] in o.name]) + 1}"
+        
+        # Create socket empty
+        socket = bpy.data.objects.new(socket_name, None)
+        socket.empty_display_type = 'ARROWS'
+        socket.empty_display_size = 0.05  # Smaller size for weapon sockets
+        
+        # Default location is at the object's location
+        socket_location = obj.location.copy()
+        socket_rotation = (0, 0, 0)
+        
+        # If in edit mode, snap to the selected face
+        if current_mode == 'EDIT_MESH' and self.snap_to_face:
+            mesh = obj.data
+            bm = bmesh.from_edit_mesh(mesh)
+            selected_faces = [f for f in bm.faces if f.select]
+            
+            if selected_faces:
+                # Get the active face
+                active_face = selected_faces[0]
+                
+                # Calculate face center
+                face_center = active_face.calc_center_median()
+                socket_location = obj.matrix_world @ face_center
+                
+                # Align to normal if requested
+                if self.align_to_normal:
+                    normal = active_face.normal.normalized()
+                    
+                    # Convert local normal to world space
+                    world_normal = obj.matrix_world.to_3x3() @ normal
+                    
+                    # Create rotation matrix from normal
+                    up_vector = Vector((0, 0, 1))
+                    
+                    if abs(world_normal.dot(up_vector)) > 0.99:
+                        # If normal is nearly parallel to up, use X as the rotation axis
+                        rot_axis = Vector((1, 0, 0))
+                    else:
+                        # Otherwise use the cross product
+                        rot_axis = world_normal.cross(up_vector).normalized()
+                    
+                    # Calculate the angle
+                    angle = world_normal.angle(up_vector)
+                    
+                    # Create a rotation matrix
+                    rot_mat = Matrix.Rotation(angle, 4, rot_axis)
+                    
+                    # Convert rotation matrix to euler angles
+                    socket_rotation = rot_mat.to_euler()
+        
+        # Set socket location and rotation
+        socket.location = socket_location
+        socket.rotation_euler = socket_rotation
+        
+        # Add the socket to the current collection
+        context.collection.objects.link(socket)
+        
+        # Parent the socket to the weapon
+        socket.parent = obj
+        
+        # Add socket properties
+        socket["socket_type"] = self.socket_type
+        socket["weapon_part"] = "attachment_point"  # Added property for weapon parts
+        
+        # Switch to Object mode if we're in Edit mode
+        if current_mode == 'EDIT_MESH':
+            bpy.ops.object.mode_set(mode='OBJECT')
+            
+        # Now we can safely select objects
+        for obj in context.selected_objects:
+            obj.select_set(False)
+        
+        socket.select_set(True)
+        context.view_layer.objects.active = socket
+        
+        # Restore previous mode if needed - but only if the original object supports edit mode
+        if current_mode == 'EDIT_MESH':
+            # Check if original object is still available and is a mesh
+            if obj and obj.type == 'MESH':
+                # Set original object as active again
+                context.view_layer.objects.active = obj
+                bpy.ops.object.mode_set(mode='EDIT')
+            # Otherwise, stay in object mode
+            else:
+                self.report({'WARNING'}, "Couldn't restore edit mode, original object no longer available")
+        
+        self.report({'INFO'}, f"Created weapon socket '{socket_name}'")
+        return {'FINISHED'}
+    
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
 class ARWEAPONS_OT_center_weapon(bpy.types.Operator):
     """Center weapon at origin and align barrel along Y+ axis"""
     bl_idname = "arweapons.center_weapon"
@@ -470,7 +638,7 @@ class ARWEAPONS_OT_create_detailed_collision(bpy.types.Operator):
         description="Maximum number of faces for convex hull method",
         default=200,
         min=20,
-        max=100000
+        max=800
     )
     
     # Parameters for Detailed method
@@ -479,7 +647,7 @@ class ARWEAPONS_OT_create_detailed_collision(bpy.types.Operator):
         description="Target number of faces for detailed method",
         default=150,
         min=50,
-        max=100000
+        max=500
     )
     
     preserve_details: bpy.props.BoolProperty(
@@ -1028,7 +1196,7 @@ class ARWEAPONS_OT_create_empties(bpy.types.Operator):
 
 
 class ARVEHICLES_OT_separate_components(bpy.types.Operator):
-    """Separate selected components into individual objects for Arma Reforger"""
+    """Separate selected components and optionally add sockets for Arma Reforger"""
     bl_idname = "arvehicles.separate_components"
     bl_label = "Separate Vehicle Components"
     bl_options = {'REGISTER', 'UNDO'}
@@ -1039,7 +1207,8 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         items=[
             ('Sight', "Sight", "Sight component"),
             ('light', "Light", "Emissive light component"),
-            ('Trigger', "Trigger", "Trigger or movable component"),('Bolt', "Bolt", "Bolt or movable component"),
+            ('Trigger', "Trigger", "Trigger or movable component"),
+            ('Bolt', "Bolt", "Bolt or movable component"),
             ('accessory', "Accessory", "Optional accessory component"),
             ('other', "Other", "Other component type"),
         ],
@@ -1050,6 +1219,30 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         name="Custom Name",
         description="Custom name for the separated component",
         default=""
+    )
+    
+    add_socket: bpy.props.BoolProperty(
+        name="Add Socket",
+        description="Add a socket empty at the component's location",
+        default=True
+    )
+    
+    socket_type: bpy.props.EnumProperty(
+        name="Socket Type",
+        description="Type of socket for this component",
+        items=[
+            ('barrel_chamber', "Barrel Chamber", "Barrel chamber attachment point"),
+            ('barrel_muzzle', "Barrel Muzzle", "Barrel muzzle attachment point"),
+            ('eye', "Eye", "Eye/sight alignment point"),
+            ('slot_barrel_muzzle', "Slot Barrel Muzzle", "Barrel muzzle slot attachment"),
+            ('slot_bayonet', "Slot Bayonet", "Bayonet attachment slot"),
+            ('slot_dovetail', "Slot Dovetail", "Dovetail attachment slot"),
+            ('slot_magazine', "Slot Magazine", "Magazine attachment slot"),
+            ('slot_underbarrel', "Slot Underbarrel", "Underbarrel attachment slot"),
+            ('snap_hand_left', "Snap Hand Left", "Left hand position"),
+            ('snap_hand_right', "Snap Hand Right", "Right hand position")
+        ],
+        default='slot_dovetail'
     )
     
     def execute(self, context):
@@ -1069,6 +1262,23 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
             self.report({'ERROR'}, "No active mesh object")
             return {'CANCELLED'}
         
+        # Calculate the center of the selected faces
+        bm = bmesh.from_edit_mesh(mesh)
+        selected_faces = [f for f in bm.faces if f.select]
+        
+        if not selected_faces:
+            self.report({'ERROR'}, "No faces selected")
+            return {'CANCELLED'}
+        
+        # Calculate the center of the selected faces
+        center = Vector((0, 0, 0))
+        for face in selected_faces:
+            center += face.calc_center_median()
+        center /= len(selected_faces)
+        
+        # Transform to world space
+        world_center = obj.matrix_world @ center
+        
         # Generate a name for the new object
         prefix = ""
         if self.component_type == 'Sight':
@@ -1080,34 +1290,80 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         elif self.component_type == 'accessory':
             prefix = "acc_"
         elif self.component_type == 'Bolt':
-            prefix = "Bolt_"        
-        new_name = self.custom_name
-        if not new_name:
-            new_name = f"{prefix}{obj.name}"
+            prefix = "Bolt_"
+                
+        new_name = self.custom_name if self.custom_name else f"{prefix}{obj.name}"
         
         # Separate the selected faces
         bpy.ops.mesh.separate(type='SELECTED')
+        
+        # Exit edit mode to work with the new object
+        bpy.ops.object.mode_set(mode='OBJECT')
         
         # Get the newly created object (last selected)
         new_obj = context.selected_objects[-1]
         new_obj.name = new_name
         
-        # Switch back to object mode
-        bpy.ops.object.mode_set(mode='OBJECT')
+        # Store the original world matrix before any parenting
+        original_matrix_world = new_obj.matrix_world.copy()
+        
+        # Add component type property
+        new_obj["component_type"] = self.component_type
+        
+        # Create a socket empty if requested
+        if self.add_socket:
+            socket_name = f"{SOCKET_NAMES[self.socket_type]}_{len([o for o in bpy.data.objects if SOCKET_NAMES[self.socket_type] in o.name]) + 1}"
+            
+            socket = bpy.data.objects.new(socket_name, None)
+            socket.empty_display_type = 'ARROWS'
+            socket.empty_display_size = 0.05  # Smaller for weapon parts
+            socket.location = world_center
+            
+            # Add the socket to the current collection
+            context.collection.objects.link(socket)
+            
+            # Parent the socket to the original object
+            socket.parent = obj
+            
+            # Parent the new component to the socket (keeping world transform)
+            # First clear parent if any
+            bpy.ops.object.select_all(action='DESELECT')
+            new_obj.select_set(True)
+            context.view_layer.objects.active = new_obj
+            
+            # Parent to socket but keep transform
+            new_obj.parent = socket
+            new_obj.matrix_world = original_matrix_world
+            
+            # Add socket properties
+            socket["socket_type"] = self.socket_type
+            socket["attached_part"] = new_obj.name
+            socket["weapon_part"] = "attachment_point"
         
         # Select only the new object
         bpy.ops.object.select_all(action='DESELECT')
         new_obj.select_set(True)
         context.view_layer.objects.active = new_obj
         
-        self.report({'INFO'}, f"Separated component as '{new_name}'")
+        self.report({'INFO'}, f"Separated component '{new_name}'" + (" with socket" if self.add_socket else ""))
         return {'FINISHED'}
     
     def invoke(self, context, event):
-        if context.mode != 'EDIT_MESH':
-            self.report({'ERROR'}, "Must be in Edit Mode with faces selected")
-            return {'CANCELLED'}
-        return context.window_manager.invoke_props_dialog(self)
+        return context.window_manager.invoke_props_dialog(self, width=350)
+    
+    def draw(self, context):
+        layout = self.layout
+        
+        # Component type and name
+        layout.prop(self, "component_type")
+        layout.prop(self, "custom_name")
+        
+        # Socket options
+        layout.prop(self, "add_socket")
+        
+        # Only show socket type if add_socket is checked
+        if self.add_socket:
+            layout.prop(self, "socket_type")
 
 class ARWEAPONS_PT_panel(bpy.types.Panel):
     """Arma Reforger Weapons Panel"""
@@ -1129,6 +1385,11 @@ class ARWEAPONS_PT_panel(bpy.types.Panel):
         row.operator("arweapons.center_weapon", text="Center", icon='PIVOT_BOUNDBOX')
         row.operator("arweapons.scale_weapon", text="Scale", icon='FULLSCREEN_ENTER')
         
+        # Component Separation section - NEW SECTION
+        box = layout.box()
+        box.label(text="Component Separation", icon='MOD_BUILD')
+        box.operator("arvehicles.separate_components", text="Separate Component", icon='UNLINKED')
+        
         # Collision boxes section
         box = layout.box()
         box.label(text="Collision", icon='MESH_CUBE')
@@ -1139,6 +1400,8 @@ class ARWEAPONS_PT_panel(bpy.types.Panel):
         box = layout.box()
         box.label(text="Attachment Points", icon='EMPTY_DATA')
         box.operator("arweapons.create_empties")
+        row = box.row(align=True)
+        row.operator("object.create_weapon_socket", text="Create Socket", icon='EMPTY_AXIS')
         
         # Rigging section
         box = layout.box()
@@ -1160,11 +1423,6 @@ class ARWEAPONS_PT_panel(bpy.types.Panel):
         row.operator("arweapons.create_bone", text="Trigger").bone_type = 'w_trigger'
         row.operator("arweapons.create_bone", text="Bolt").bone_type = 'w_bolt'
         
-        box = layout.box()
-        box.label(text="Component Separation", icon='MOD_BUILD')
-        row = box.row(align=True)
-        row.operator("arvehicles.separate_components", text="Separate Selection", icon='UNLINKED')
-        
         # Parenting
         col.separator()
         col.operator("arweapons.parent_to_armature")
@@ -1181,6 +1439,7 @@ classes = (
     ARWEAPONS_OT_parent_to_armature,
     ARWEAPONS_OT_create_empties,
     ARWEAPONS_PT_panel,ARVEHICLES_OT_separate_components,
+    CREATE_SOCKET_OT_create_socket,
 )
 
 def register():
@@ -1193,3 +1452,8 @@ def unregister():
 
 if __name__ == "__main__":
     register()
+    
+    
+
+
+
