@@ -63,7 +63,6 @@ SOCKET_TYPES = [
 
 
 
-
 class CREATE_SOCKET_OT_create_socket(bpy.types.Operator):
     """Create a weapon attachment socket at selected face or object location"""
     bl_idname = "object.create_weapon_socket"  # Changed to indicate weapon sockets
@@ -168,8 +167,8 @@ class CREATE_SOCKET_OT_create_socket(bpy.types.Operator):
         # Add the socket to the current collection
         context.collection.objects.link(socket)
         
-        # Parent the socket to the weapon
-        socket.parent = obj
+        # Remove parent relationship - DO NOT PARENT THE SOCKET
+        # socket.parent = obj  <- THIS LINE IS REMOVED
         
         # Add socket properties
         socket["socket_type"] = self.socket_type
@@ -202,6 +201,10 @@ class CREATE_SOCKET_OT_create_socket(bpy.types.Operator):
     
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
+
+
+
+
 class ARWEAPONS_OT_center_weapon(bpy.types.Operator):
     """Center weapon at origin and align barrel along Y+ axis"""
     bl_idname = "arweapons.center_weapon"
@@ -1162,21 +1165,21 @@ class ARWEAPONS_OT_create_empties(bpy.types.Operator):
                 empty = self._create_empty("eye", EMPTY_LOCATIONS["eye"], weapon_collection, 'CUBE', 0.01)
                 created_empties.append("eye")
         
-        # Parent empties to armature if it exists
-        armature = None
-        for obj in bpy.data.objects:
-            if obj.type == 'ARMATURE':
-                armature = obj
-                break
-        
-        if armature:
-            for name in created_empties:
-                if name in bpy.data.objects:
-                    obj = bpy.data.objects[name]
-                    obj.parent = armature
+        # DO NOT PARENT EMPTIES TO ARMATURE - THIS SECTION IS REMOVED
+        # armature = None
+        # for obj in bpy.data.objects:
+        #     if obj.type == 'ARMATURE':
+        #         armature = obj
+        #         break
+        # 
+        # if armature:
+        #     for name in created_empties:
+        #         if name in bpy.data.objects:
+        #             obj = bpy.data.objects[name]
+        #             obj.parent = armature
         
         if created_empties:
-            self.report({'INFO'}, f"Created {len(created_empties)} empty objects")
+            self.report({'INFO'}, f"Created {len(created_empties)} empty objects (unparented)")
         else:
             self.report({'WARNING'}, "No new empties created, they may already exist")
             
@@ -1193,7 +1196,6 @@ class ARWEAPONS_OT_create_empties(bpy.types.Operator):
     
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
-
 
 class ARVEHICLES_OT_separate_components(bpy.types.Operator):
     """Separate selected components and optionally add sockets for Arma Reforger"""
@@ -1322,18 +1324,12 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
             # Add the socket to the current collection
             context.collection.objects.link(socket)
             
-            # Parent the socket to the original object
-            socket.parent = obj
+            # DO NOT PARENT THE SOCKET - THIS IS REMOVED
+            # socket.parent = obj
             
-            # Parent the new component to the socket (keeping world transform)
-            # First clear parent if any
-            bpy.ops.object.select_all(action='DESELECT')
-            new_obj.select_set(True)
-            context.view_layer.objects.active = new_obj
-            
-            # Parent to socket but keep transform
-            new_obj.parent = socket
-            new_obj.matrix_world = original_matrix_world
+            # DO NOT PARENT THE COMPONENT EITHER - THIS IS REMOVED
+            # new_obj.parent = socket
+            # new_obj.matrix_world = original_matrix_world
             
             # Add socket properties
             socket["socket_type"] = self.socket_type
@@ -1345,7 +1341,7 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         new_obj.select_set(True)
         context.view_layer.objects.active = new_obj
         
-        self.report({'INFO'}, f"Separated component '{new_name}'" + (" with socket" if self.add_socket else ""))
+        self.report({'INFO'}, f"Separated component '{new_name}'" + (" with unparented socket" if self.add_socket else ""))
         return {'FINISHED'}
     
     def invoke(self, context, event):
