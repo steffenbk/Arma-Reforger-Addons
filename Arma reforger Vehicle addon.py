@@ -1819,48 +1819,6 @@ class ARVEHICLES_OT_parent_to_armature(bpy.types.Operator):
         self.report({'INFO'}, f"Parented {len(mesh_objects)} objects to the vehicle armature")
         return {'FINISHED'}
 
-class ARVEHICLES_OT_setup_layer_presets(bpy.types.Operator):
-    """Setup layer presets for collision objects"""
-    bl_idname = "arvehicles.setup_layer_presets"
-    bl_label = "Setup Layer Presets"
-    bl_options = {'REGISTER', 'UNDO'}
-    
-    def execute(self, context):
-        # Get selected objects
-        selected_objects = context.selected_objects
-        
-        if not selected_objects:
-            self.report({'ERROR'}, "No objects selected")
-            return {'CANCELLED'}
-            
-        # Count of updated objects
-        updated_count = 0
-        
-        for obj in selected_objects:
-            # Check prefix to determine preset
-            if obj.name.startswith("UCX_"):
-                obj["layer_preset"] = "Collision_Vehicle"
-                obj["usage"] = "PhyCol"
-                updated_count += 1
-            elif obj.name.startswith("UTM_"):
-                obj["layer_preset"] = "Collision_Vehicle"
-                obj["usage"] = "FireGeo"
-                updated_count += 1
-            elif obj.name.startswith("UCS_") or obj.name.startswith("USP_"):
-                obj["layer_preset"] = "Collision_Vehicle"
-                obj["usage"] = "PhyCol"
-                updated_count += 1
-            elif obj.name.startswith("COM_"):
-                obj["layer_preset"] = "Collision_Vehicle"
-                obj["usage"] = "CenterOfMass"
-                updated_count += 1
-            
-        if updated_count > 0:
-            self.report({'INFO'}, f"Added layer presets to {updated_count} objects")
-        else:
-            self.report({'WARNING'}, "No compatible objects found for layer presets")
-            
-        return {'FINISHED'}
 
 class ARVEHICLES_OT_setup_export(bpy.types.Operator):
     """Setup FBX export settings for Arma Reforger"""
@@ -1979,7 +1937,7 @@ classes = (
     ARVEHICLES_OT_create_empties,
     ARVEHICLES_OT_separate_components,
     ARVEHICLES_OT_parent_to_armature,
-    ARVEHICLES_OT_setup_layer_presets,
+
     ARVEHICLES_OT_setup_export,
     ARVEHICLES_PT_panel,ARVEHICLES_OT_create_vehicle_socket,
 )
