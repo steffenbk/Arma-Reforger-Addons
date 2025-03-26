@@ -192,8 +192,8 @@ class ARVEHICLES_OT_create_vehicle_socket(bpy.types.Operator):
         # Add the socket to the current collection
         context.collection.objects.link(socket)
         
-        # Parent the socket to the vehicle
-        socket.parent = obj
+        # NOTE: We do NOT parent the socket to ensure compatibility with Arma Reforger
+        # socket.parent = obj  <-- This line is removed
         
         # Add socket properties
         socket["socket_type"] = self.socket_type
@@ -221,11 +221,12 @@ class ARVEHICLES_OT_create_vehicle_socket(bpy.types.Operator):
             else:
                 self.report({'WARNING'}, "Couldn't restore edit mode, original object no longer available")
         
-        self.report({'INFO'}, f"Created vehicle socket '{socket_name}'")
+        self.report({'INFO'}, f"Created unparented vehicle socket '{socket_name}'")
         return {'FINISHED'}
     
     def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self)
+        return context.window_manager.invoke_props_dialog(self)    
+    
 class ARVEHICLES_OT_orient_vehicle(bpy.types.Operator):
     """Orient vehicle along the Y+ axis (Blender) as required by Arma Reforger"""
     bl_idname = "arvehicles.orient_vehicle"
@@ -1620,163 +1621,26 @@ class ARVEHICLES_OT_create_empties(bpy.types.Operator):
                     empty = self._create_empty(name, pos, vehicle_collection, 'CUBE', 0.1)
                     created_empties.append(name)
         
-        # Parent empties to armature if it exists
-        armature = None
-        for obj in bpy.data.objects:
-            if obj.type == 'ARMATURE' and "VehicleArmature" in obj.name:
-                armature = obj
-                break
-        
-        if armature:
-            for name in created_empties:
-                if name in bpy.data.objects:
-                    obj = bpy.data.objects[name]
-                    obj.parent = armature
-                    # No bone parenting by default, user can set this up manually
+        # NOTE: We do NOT parent empties to the armature to ensure compatibility with Arma Reforger
+        # The following code has been removed:
+        # armature = None
+        # for obj in bpy.data.objects:
+        #     if obj.type == 'ARMATURE' and "VehicleArmature" in obj.name:
+        #         armature = obj
+        #         break
+        # 
+        # if armature:
+        #     for name in created_empties:
+        #         if name in bpy.data.objects:
+        #             obj = bpy.data.objects[name]
+        #             obj.parent = armature
         
         if created_empties:
-            self.report({'INFO'}, f"Created {len(created_empties)} empty objects")
+            self.report({'INFO'}, f"Created {len(created_empties)} unparented empty objects")
         else:
             self.report({'WARNING'}, "No new empties created, they may already exist")
             
         return {'FINISHED'}
-    
-    def _create_empty(self, name, location, collection, display_type, size):
-        """Helper function to create an empty object"""
-        empty = bpy.data.objects.new(name, None)
-        empty.empty_display_type = display_type
-        empty.empty_display_size = size
-        empty.location = location
-        collection.objects.link(empty)
-        return empty
-    
-    def _get_selected_dimensions(self, context):
-        """Get dimensions and center of selected objects, or use defaults"""
-        if len(context.selected_objects) > 0:
-            mesh_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
-            if mesh_objects:
-                min_x, min_y, min_z = float('inf'), float('inf'), float('inf')
-                max_x, max_y, max_z = float('-inf'), float('-inf'), float('-inf')
-                
-                for obj in mesh_objects:
-                    for vert in obj.data.vertices:
-                        world_co = obj.matrix_world @ vert.co
-                        min_x = min(min_x, world_co.x)
-                        min_y = min(min_y, world_co.y)
-                        min_z = min(min_z, world_co.z)
-                        max_x = max(max_x, world_co.x)
-                        max_y = max(max_y, world_co.y)
-                        max_z = max(max_z, world_co.z)
-                
-                length = max_y - min_y
-                width = max_x - min_x
-                height = max_z - min_z
-                center = ((min_x + max_x) / 2, (min_y + max_y) / 2, (min_z + max_z) / 2)
-                
-                return (length, width, height), center
-        
-        # Default dimensions and center if no selection
-        return (4.07, 1.8, 1.46), (0, 0, 0)
-    
-    def _generate_crew_positions(self, num_crew, dimensions, center):
-        """Generate crew position empties"""
-        length, width, height = dimensions
-        cx, cy, cz = center
-        
-        positions = []
-        
-        # Driver always at the front left
-        positions.append(("driver", (cx - width * 0.35, cy + length * 0.2, cz + height * 0.6)))
-        
-        # Co-driver at the front right
-        if num_crew > 1:
-            positions.append(("codriver", (cx + width * 0.35, cy + length * 0.2, cz + height * 0.6)))
-        
-        # Additional passengers in the back
-        for i in range(2, num_crew):
-            side = 1 if i % 2 == 0 else -1  # Alternate sides
-            row = (i - 2) // 2  # 0 for first row, 1 for second, etc.
-            
-            positions.append((f"cargo{i-1:02d}", 
-                             (cx + side * width * 0.35, 
-                              cy - length * (0.1 + row * 0.25), 
-                              cz + height * 0.6)))
-        
-        return positions
-    
-    def _generate_component_positions(self, dimensions, center):
-        """Generate vehicle component empties"""
-        length, width, height = dimensions
-        cx, cy, cz = center
-        
-        positions = [
-            ("engine", (cx, cy + length * 0.4, cz + height * 0.3)),
-            ("exhaust", (cx + width * 0.2, cy - length * 0.45, cz + height * 0.1)),
-            ("frontlight_left", (cx + width * 0.4, cy + length * 0.48, cz + height * 0.3)),
-            ("frontlight_right", (cx - width * 0.4, cy + length * 0.48, cz + height * 0.3)),
-            ("backlight_left", (cx + width * 0.4, cy - length * 0.48, cz + height * 0.3)),
-            ("backlight_right", (cx - width * 0.4, cy - length * 0.48, cz + height * 0.3))
-        ]
-        
-        return positions
-    
-    def _generate_wheel_positions(self, num_wheels, dimensions, center):
-        """Generate wheel position empties"""
-        length, width, height = dimensions
-        cx, cy, cz = center
-        
-        positions = []
-        wheel_radius = height * 0.2
-        
-        # Always place wheels at the corners (front and back)
-        front_y = cy + length * 0.4  # Front axle position
-        rear_y = cy - length * 0.4   # Rear axle position
-        side_x = width * 0.45   # Side offset (left/right)
-        wheel_z = cz + wheel_radius  # Wheel height position
-        
-        # Front wheels (right, left)
-        positions.append(("wheel_1_1", (cx + side_x, front_y, wheel_z)))
-        positions.append(("wheel_1_2", (cx - side_x, front_y, wheel_z)))
-        
-        # Rear wheels (right, left)
-        positions.append(("wheel_2_1", (cx + side_x, rear_y, wheel_z)))
-        positions.append(("wheel_2_2", (cx - side_x, rear_y, wheel_z)))
-        
-        # If more than 4 wheels, add middle axles
-        if num_wheels > 4:
-            num_middle_axles = (num_wheels - 4) // 2
-            
-            # Space the middle axles evenly between front and rear
-            axle_spacing = (front_y - rear_y) / (num_middle_axles + 1)
-            
-            for i in range(1, num_middle_axles + 1):
-                middle_y = front_y - (axle_spacing * i)
-                idx = i + 2  # wheel_3_x, wheel_4_x, etc.
-                
-                positions.append((f"wheel_{idx}_1", (cx + side_x, middle_y, wheel_z)))
-                positions.append((f"wheel_{idx}_2", (cx - side_x, middle_y, wheel_z)))
-        
-        return positions
-    
-    def _generate_damage_zones(self, dimensions, center, vehicle_type):
-        """Generate damage zone empties"""
-        length, width, height = dimensions
-        cx, cy, cz = center
-        
-        positions = [
-            ("dmg_zone_engine", (cx, cy + length * 0.4, cz + height * 0.3)),
-            ("dmg_zone_fueltank", (cx, cy - length * 0.4, cz + height * 0.3)),
-            ("dmg_zone_body", (cx, cy, cz + height * 0.4)),
-        ]
-        
-        # Add turret damage zone for military vehicles
-        if vehicle_type == 'apc':
-            positions.append(("dmg_zone_turret", (cx, cy, cz + height * 0.8)))
-        
-        return positions
-    
-    def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self)
 
 class ARVEHICLES_OT_separate_components(bpy.types.Operator):
     """Separate selected components into individual objects for Arma Reforger"""
@@ -1869,9 +1733,6 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         new_obj = context.selected_objects[-1]
         new_obj.name = new_name
         
-        # Store the original world matrix before any parenting
-        original_matrix_world = new_obj.matrix_world.copy()
-        
         # Add component type property
         new_obj["component_type"] = self.component_type
         
@@ -1887,18 +1748,9 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
             # Add the socket to the current collection
             context.collection.objects.link(socket)
             
-            # Parent the socket to the original object
-            socket.parent = obj
-            
-            # Parent the new component to the socket (keeping world transform)
-            # First clear parent if any
-            bpy.ops.object.select_all(action='DESELECT')
-            new_obj.select_set(True)
-            context.view_layer.objects.active = new_obj
-            
-            # Parent to socket but keep transform
-            new_obj.parent = socket
-            new_obj.matrix_world = original_matrix_world
+            # NOTE: We do NOT parent either the socket or the component
+            # socket.parent = obj  <-- This line is removed
+            # new_obj.parent = socket  <-- This line is removed
             
             # Add socket properties
             socket["socket_type"] = self.component_type
@@ -1910,7 +1762,7 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         new_obj.select_set(True)
         context.view_layer.objects.active = new_obj
         
-        self.report({'INFO'}, f"Separated component '{new_name}'" + (" with socket" if self.add_socket else ""))
+        self.report({'INFO'}, f"Separated component '{new_name}'" + (" with unparented socket" if self.add_socket else ""))
         return {'FINISHED'}
     
     def invoke(self, context, event):
