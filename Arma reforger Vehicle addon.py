@@ -1819,7 +1819,6 @@ class ARVEHICLES_OT_parent_to_armature(bpy.types.Operator):
         self.report({'INFO'}, f"Parented {len(mesh_objects)} objects to the vehicle armature")
         return {'FINISHED'}
 
-
 class ARVEHICLES_OT_setup_export(bpy.types.Operator):
     """Setup FBX export settings for Arma Reforger"""
     bl_idname = "arvehicles.setup_export"
@@ -1910,6 +1909,7 @@ class ARVEHICLES_PT_panel(bpy.types.Panel):
         box.label(text="Rigging", icon='ARMATURE_DATA')
         box.operator("arvehicles.create_armature", icon='BONE_DATA')
         box.operator("arvehicles.parent_to_armature", icon='ARMATURE_DATA')
+        box.operator("arvehicles.create_custom_bone", icon='BONE_DATA')
         
 
         # In your ARVEHICLES_PT_panel draw method, in the "Attachment Points" section:
@@ -1924,7 +1924,131 @@ class ARVEHICLES_PT_panel(bpy.types.Panel):
         box.label(text="Export", icon='EXPORT')
         box.operator("arvehicles.setup_export", icon='FILEBROWSER')
         
-# List of all classes to register
+
+class ARVEHICLES_OT_create_custom_bone(bpy.types.Operator):
+    """Add a custom bone to the vehicle armature"""
+    bl_idname = "arvehicles.create_custom_bone"
+    bl_label = "Add Custom Bone"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    bone_name: bpy.props.StringProperty(
+        name="Bone Name",
+        description="Name for the custom bone (v_ prefix will be added automatically if not present)",
+        default="custom"
+    )
+    
+    bone_head_x: bpy.props.FloatProperty(
+        name="Head X", 
+        description="X position of bone head",
+        default=0.0
+    )
+    
+    bone_head_y: bpy.props.FloatProperty(
+        name="Head Y", 
+        description="Y position of bone head",
+        default=0.0
+    )
+    
+    bone_head_z: bpy.props.FloatProperty(
+        name="Head Z", 
+        description="Z position of bone head",
+        default=0.5
+    )
+    
+    bone_tail_x: bpy.props.FloatProperty(
+        name="Tail X", 
+        description="X position of bone tail",
+        default=0.0
+    )
+    
+    bone_tail_y: bpy.props.FloatProperty(
+        name="Tail Y", 
+        description="Y position of bone tail",
+        default=0.2
+    )
+    
+    bone_tail_z: bpy.props.FloatProperty(
+        name="Tail Z", 
+        description="Z position of bone tail",
+        default=0.5
+    )
+    
+    def execute(self, context):
+        # Find the vehicle armature
+        armature = None
+        for obj in bpy.data.objects:
+            if obj.type == 'ARMATURE' and "VehicleArmature" in obj.name:
+                armature = obj
+                break
+        
+        if not armature:
+            self.report({'ERROR'}, "No vehicle armature found. Please create one first.")
+            return {'CANCELLED'}
+        
+        # Make the armature active
+        context.view_layer.objects.active = armature
+        
+        # Enter edit mode
+        bpy.ops.object.mode_set(mode='EDIT')
+        
+        # Check if v_root exists
+        if 'v_root' not in armature.data.edit_bones:
+            self.report({'ERROR'}, "v_root bone not found. Please create the armature first.")
+            bpy.ops.object.mode_set(mode='OBJECT')
+            return {'CANCELLED'}
+        
+        # Add v_ prefix if not already present
+        bone_name = self.bone_name
+        if not bone_name.startswith('v_'):
+            bone_name = 'v_' + bone_name
+        
+        # Check if bone already exists and auto-increment if needed
+        if bone_name in armature.data.edit_bones:
+            base_name = bone_name
+            counter = 1
+            while bone_name in armature.data.edit_bones:
+                bone_name = f"{base_name}_{counter:02d}"
+                counter += 1
+        
+        # Create the custom bone
+        bone = armature.data.edit_bones.new(bone_name)
+        bone.head = (self.bone_head_x, self.bone_head_y, self.bone_head_z)
+        bone.tail = (self.bone_tail_x, self.bone_tail_y, self.bone_tail_z)
+        
+        # Parent to v_root
+        bone.parent = armature.data.edit_bones['v_root']
+        
+        # Exit edit mode
+        bpy.ops.object.mode_set(mode='OBJECT')
+        
+        self.report({'INFO'}, f"Created custom bone '{bone_name}' under v_root")
+        return {'FINISHED'}
+    
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+        
+    def draw(self, context):
+        layout = self.layout
+        
+        box = layout.box()
+        box.label(text="Bone Name:")
+        box.prop(self, "bone_name", text="")
+        
+        # Create two columns for head and tail coordinates
+        split = layout.split(factor=0.5)
+        col1 = split.column()
+        col2 = split.column()
+        
+        col1.label(text="Head Position:")
+        col1.prop(self, "bone_head_x")
+        col1.prop(self, "bone_head_y")
+        col1.prop(self, "bone_head_z")
+        
+        col2.label(text="Tail Position:")
+        col2.prop(self, "bone_tail_x")
+        col2.prop(self, "bone_tail_y")
+        col2.prop(self, "bone_tail_z")
+
 # List of all classes to register
 classes = (
     ARVEHICLES_OT_orient_vehicle,
@@ -1937,9 +2061,10 @@ classes = (
     ARVEHICLES_OT_create_empties,
     ARVEHICLES_OT_separate_components,
     ARVEHICLES_OT_parent_to_armature,
-
+    ARVEHICLES_OT_create_custom_bone,  # Added the custom bone operator
     ARVEHICLES_OT_setup_export,
-    ARVEHICLES_PT_panel,ARVEHICLES_OT_create_vehicle_socket,
+    ARVEHICLES_PT_panel,
+    ARVEHICLES_OT_create_vehicle_socket,
 )
 
 def register():
