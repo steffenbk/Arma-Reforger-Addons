@@ -932,6 +932,7 @@ class ARWEAPONS_OT_create_detailed_collision(bpy.types.Operator):
         # Common parameters
         layout.prop(self, "offset")
 
+
 class ARWEAPONS_OT_create_bone(bpy.types.Operator):
     """Add a bone to the weapon rig"""
     bl_idname = "arweapons.create_bone"
@@ -947,9 +948,78 @@ class ARWEAPONS_OT_create_bone(bpy.types.Operator):
             ('w_charging_handle', "Charging Handle", "Charging handle bone"),
             ('w_trigger', "Trigger", "Trigger bone"),
             ('w_bolt', "Bolt", "Bolt/slide bone"),
+            ('custom', "Custom Bone", "Add a custom bone"),
         ],
         default='w_root'
     )
+    
+    # Add properties for custom bone
+    custom_bone_name: bpy.props.StringProperty(
+        name="Bone Name",
+        description="Name for the custom bone",
+        default="w_custom"
+    )
+    
+    custom_bone_head_x: bpy.props.FloatProperty(
+        name="Head X", 
+        description="X position of bone head",
+        default=0.0
+    )
+    
+    custom_bone_head_y: bpy.props.FloatProperty(
+        name="Head Y", 
+        description="Y position of bone head",
+        default=0.0
+    )
+    
+    custom_bone_head_z: bpy.props.FloatProperty(
+        name="Head Z", 
+        description="Z position of bone head",
+        default=0.0
+    )
+    
+    custom_bone_tail_x: bpy.props.FloatProperty(
+        name="Tail X", 
+        description="X position of bone tail",
+        default=0.0
+    )
+    
+    custom_bone_tail_y: bpy.props.FloatProperty(
+        name="Tail Y", 
+        description="Y position of bone tail",
+        default=0.087
+    )
+    
+    custom_bone_tail_z: bpy.props.FloatProperty(
+        name="Tail Z", 
+        description="Z position of bone tail",
+        default=0.0
+    )
+    
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "bone_type")
+        
+        # Show custom bone properties only when custom bone type is selected
+        if self.bone_type == 'custom':
+            box = layout.box()
+            box.label(text="Custom Bone Properties:")
+            box.prop(self, "custom_bone_name")
+            
+            # Create two columns for head and tail coordinates
+            split = box.split(factor=0.5)
+            col1 = split.column()
+            col2 = split.column()
+            
+            col1.label(text="Head Position:")
+            col1.prop(self, "custom_bone_head_x")
+            col1.prop(self, "custom_bone_head_y")
+            col1.prop(self, "custom_bone_head_z")
+            
+            col2.label(text="Tail Position:")
+            col2.prop(self, "custom_bone_tail_x")
+            col2.prop(self, "custom_bone_tail_y")
+            col2.prop(self, "custom_bone_tail_z")
     
     def execute(self, context):
         # Find or create the armature
@@ -980,15 +1050,28 @@ class ARWEAPONS_OT_create_bone(bpy.types.Operator):
         # Standard bone length
         bone_length = 0.087
         
-        # Check if the bone already exists
-        if self.bone_type in armature.data.edit_bones:
+        # For custom bone, use the custom name
+        bone_name = self.bone_type
+        if self.bone_type == 'custom':
+            bone_name = self.custom_bone_name
+            
+            # Auto-increment custom bone name if it already exists
+            if bone_name in armature.data.edit_bones:
+                base_name = bone_name
+                counter = 1
+                while bone_name in armature.data.edit_bones:
+                    bone_name = f"{base_name}.{counter:03d}"
+                    counter += 1
+        
+        # Check if the bone already exists (only for non-custom bones)
+        elif bone_name in armature.data.edit_bones:
             # If w_root already exists, just report and return success
-            if self.bone_type == 'w_root':
+            if bone_name == 'w_root':
                 self.report({'INFO'}, "w_root already exists")
                 bpy.ops.object.mode_set(mode='OBJECT')
                 return {'FINISHED'}
             else:
-                self.report({'WARNING'}, f"{self.bone_type} already exists")
+                self.report({'WARNING'}, f"{bone_name} already exists")
                 bpy.ops.object.mode_set(mode='OBJECT')
                 return {'CANCELLED'}
         
@@ -1033,13 +1116,19 @@ class ARWEAPONS_OT_create_bone(bpy.types.Operator):
             bone.head = (0, -0.166, 0.065)
             bone.tail = (0, -0.079, 0.065)
             bone.parent = parent_bone
+            
+        elif self.bone_type == 'custom':
+            bone = armature.data.edit_bones.new(bone_name)  # Use the potentially auto-incremented name
+            bone.head = (self.custom_bone_head_x, self.custom_bone_head_y, self.custom_bone_head_z)
+            bone.tail = (self.custom_bone_tail_x, self.custom_bone_tail_y, self.custom_bone_tail_z)
+            if parent_bone:
+                bone.parent = parent_bone
         
         # Exit edit mode
         bpy.ops.object.mode_set(mode='OBJECT')
         
-        self.report({'INFO'}, f"Created {self.bone_type} bone")
+        self.report({'INFO'}, f"Created {bone_name} bone")
         return {'FINISHED'}
-
 class ARWEAPONS_OT_parent_to_armature(bpy.types.Operator):
     """Parent selected meshes to the armature"""
     bl_idname = "arweapons.parent_to_armature"
@@ -1418,6 +1507,9 @@ class ARWEAPONS_PT_panel(bpy.types.Panel):
         row = col.row(align=True)
         row.operator("arweapons.create_bone", text="Trigger").bone_type = 'w_trigger'
         row.operator("arweapons.create_bone", text="Bolt").bone_type = 'w_bolt'
+        
+        row.operator("arweapons.create_bone", text="Custom").bone_type = 'custom'
+        
         
         # Parenting
         col.separator()
