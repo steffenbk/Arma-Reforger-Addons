@@ -113,7 +113,7 @@ class CREATE_SOCKET_OT_create_socket(bpy.types.Operator):
         
         # Create socket empty
         socket = bpy.data.objects.new(socket_name, None)
-        socket.empty_display_type = 'ARROWS'
+        socket.empty_display_type = 'PLAIN AXES'
         socket.empty_display_size = 0.05  # Smaller size for weapon sockets
         
         # Default location is at the object's location
@@ -1236,7 +1236,7 @@ class ARWEAPONS_OT_create_empties(bpy.types.Operator):
             ]
             for name in snap_empties:
                 if name not in bpy.data.objects:
-                    empty = self._create_empty(name, EMPTY_LOCATIONS[name], weapon_collection, 'ARROWS', 0.04)
+                    empty = self._create_empty(name, EMPTY_LOCATIONS[name], weapon_collection, 'PLAIN AXES', 0.04)
                     created_empties.append(name)
         
         if self.create_barrel_points:
@@ -1406,7 +1406,7 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
             socket_name = f"{SOCKET_NAMES[self.socket_type]}_{len([o for o in bpy.data.objects if SOCKET_NAMES[self.socket_type] in o.name]) + 1}"
             
             socket = bpy.data.objects.new(socket_name, None)
-            socket.empty_display_type = 'ARROWS'
+            socket.empty_display_type = 'PLAIN AXES'
             socket.empty_display_size = 0.05  # Smaller for weapon parts
             socket.location = world_center
             
