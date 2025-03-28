@@ -65,11 +65,12 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
         default=True,
     )
     
-    # Specific Arma Reforger Settings
+    # Specific Arma Reforger Settings - leaf bones always off
     add_leaf_bones: BoolProperty(
         name="Add Leaf Bones",
         description="Add leaf bones as seen in your reference image",
-        default=True,
+        default=False,
+        options={'HIDDEN'},  # Hide this option as it should always be off
     )
     
     align_to_y_axis: BoolProperty(
@@ -152,7 +153,7 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
         # Custom settings specific to Arma Reforger requirements
         box = layout.box()
         box.label(text="Enfusion Engine Settings")
-        box.prop(self, "add_leaf_bones")
+        # "add_leaf_bones" option removed from UI - it's always off
         box.prop(self, "align_to_y_axis")
         
         # Centering options
@@ -342,7 +343,7 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
             'use_mesh_modifiers': True,
             'use_armature_deform_only': False,
             'bake_anim': self.preserve_armature,
-            'add_leaf_bones': self.add_leaf_bones,
+            'add_leaf_bones': False,  # Always off regardless of property value
             'primary_bone_axis': 'Y',  # As seen in your reference image
             'secondary_bone_axis': 'X',
             'mesh_smooth_type': 'FACE',
@@ -426,7 +427,7 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
                 'use_mesh_modifiers': True,
                 'use_armature_deform_only': False,
                 'bake_anim': False,
-                'add_leaf_bones': self.add_leaf_bones,
+                'add_leaf_bones': False,  # Always off regardless of property value
                 'primary_bone_axis': 'Y',
                 'secondary_bone_axis': 'X',
                 'mesh_smooth_type': 'FACE',
@@ -545,11 +546,11 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
 # Add sidebar panel for quick access
 class VIEW3D_PT_arma_reforger_tools(bpy.types.Panel):
     """Arma Reforger Tools Sidebar Panel"""
-    bl_label = "AR Export"
+    bl_label = "AR Tools"
     bl_idname = "VIEW3D_PT_arma_reforger_tools"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'AR Export'  # This will create a new tab in the sidebar
+    bl_category = 'AR Tools'  # This will create a new tab in the sidebar
     
     def draw(self, context):
         layout = self.layout
