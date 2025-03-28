@@ -546,11 +546,11 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
 # Add sidebar panel for quick access
 class VIEW3D_PT_arma_reforger_tools(bpy.types.Panel):
     """Arma Reforger Tools Sidebar Panel"""
-    bl_label = "AR Tools"
+    bl_label = "AR Export"
     bl_idname = "VIEW3D_PT_arma_reforger_tools"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'AR Tools'  # This will create a new tab in the sidebar
+    bl_category = 'AR Export'  # This will create a new tab in the sidebar
     
     def draw(self, context):
         layout = self.layout
