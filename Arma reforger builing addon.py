@@ -448,7 +448,7 @@ class ARBUILDINGS_OT_create_firegeo_collision(bpy.types.Operator):
             ('CONVEX', "Convex Hull (Stable)", "Create a simplified convex hull - stable even with high-poly models"),
             ('DETAILED', "Detailed (Better Shape)", "Create a more detailed shape that better preserves features"),
         ],
-        default='CONVEX'
+        default='DETAILED'
     )
     
     target_faces: bpy.props.IntProperty(
