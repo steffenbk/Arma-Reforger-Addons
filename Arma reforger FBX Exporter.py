@@ -9,7 +9,7 @@ from bpy_extras.io_utils import ExportHelper
 bl_info = {
     "name": "Arma Reforger Asset Exporter",
     "author": "Your Name",
-    "version": (1, 2),
+    "version": (1, 3),
     "blender": (4, 0, 0),
     "location": "File > Export > Arma Reforger Asset (.fbx) / Sidebar > AR Tools",
     "description": "Export assets for Arma Reforger Enfusion Engine",
@@ -71,6 +71,20 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
         description="Add leaf bones as seen in your reference image",
         default=False,
         options={'HIDDEN'},  # Hide this option as it should always be off
+    )
+    
+    # FIX: Add option to flip normals or recalculate them
+    flip_normals: BoolProperty(
+        name="Fix Inverted Faces",
+        description="Fix inverted faces by ensuring correct face orientation",
+        default=True,
+    )
+    
+    # FIX: Add option for correct Y-forward Z-up coordinate system
+    use_correct_axes: BoolProperty(
+        name="Use Correct Axes",
+        description="Ensure Y-forward Z-up axes for Enfusion Engine",
+        default=True,
     )
     
     align_to_y_axis: BoolProperty(
@@ -155,6 +169,10 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
         box.label(text="Enfusion Engine Settings")
         # "add_leaf_bones" option removed from UI - it's always off
         box.prop(self, "align_to_y_axis")
+        
+        # FIX: Add new options for fixing inverted faces
+        box.prop(self, "flip_normals")
+        box.prop(self, "use_correct_axes")
         
         # Centering options
         box = layout.box()
@@ -255,6 +273,8 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
         print(f"- Auto Undo: {self.use_auto_undo}")
         print(f"- Undo Delay: {self.undo_delay} seconds")
         print(f"- Restore Positions: {self.restore_positions}")
+        print(f"- Fix Inverted Faces: {self.flip_normals}")
+        print(f"- Use Correct Axes: {self.use_correct_axes}")
         
         # Delete collection if requested
         deleted_collection = False
@@ -312,12 +332,55 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
             if context.object and original_mode != 'OBJECT':
                 bpy.ops.object.mode_set(mode=original_mode)
 
+    # FIX: Add new function to fix face orientation
+    def fix_face_orientation(self, obj):
+        """Fix face orientation to ensure faces point outward"""
+        if obj.type != 'MESH':
+            return
+            
+        # Get the current active object and selection
+        original_active = bpy.context.view_layer.objects.active
+        original_selected = [o for o in bpy.context.selected_objects]
+        
+        # Select only our target object
+        bpy.ops.object.select_all(action='DESELECT')
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        
+        # Enter edit mode
+        original_mode = obj.mode
+        bpy.ops.object.mode_set(mode='EDIT')
+        
+        # Select all faces
+        bpy.ops.mesh.select_all(action='SELECT')
+        
+        # Recalculate normals outside
+        bpy.ops.mesh.normals_make_consistent(inside=False)
+        
+        # Return to object mode
+        bpy.ops.object.mode_set(mode=original_mode)
+        
+        # Restore original selection
+        bpy.ops.object.select_all(action='DESELECT')
+        for o in original_selected:
+            if o.name in bpy.context.view_layer.objects:
+                o.select_set(True)
+        if original_active and original_active.name in bpy.context.view_layer.objects:
+            bpy.context.view_layer.objects.active = original_active
+
     def export_full_scene(self, context, filepath):
         """Export the entire scene as one asset"""
         # Check if we need to center the entire scene
         original_locations = {}
         original_origins = {}
         meshes_to_center = []
+        
+        # Fix mesh face orientation if requested
+        if self.flip_normals:
+            print("Fixing face orientation for all mesh objects...")
+            for obj in context.scene.objects:
+                if obj.type == 'MESH':
+                    self.fix_face_orientation(obj)
         
         if self.center_to_origin:
             print("Centering objects to origin...")
@@ -338,8 +401,10 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
         export_settings = {
             'filepath': filepath,
             'use_selection': False,
-            'axis_forward': 'Y',  # For correct Y-axis alignment
-            'axis_up': 'Z',
+            # FIX: Changed axis_forward from 'Y' to '-Z' and axis_up from 'Z' to 'Y'
+            # This corrects the coordinate system for Enfusion Engine
+            'axis_forward': '-Z' if self.use_correct_axes else 'Y',  
+            'axis_up': 'Y' if self.use_correct_axes else 'Z',
             'use_mesh_modifiers': True,
             'use_armature_deform_only': False,
             'bake_anim': self.preserve_armature,
@@ -369,6 +434,10 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
             raise Exception("No mesh objects selected for individual export")
             
         for i, obj in enumerate(selected_objects):
+            # Fix face orientation if requested
+            if self.flip_normals:
+                self.fix_face_orientation(obj)
+                
             # Save original transform and origin data
             original_location = obj.location.copy()
             original_matrix_world = obj.matrix_world.copy()
@@ -401,6 +470,10 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
                         collider_obj = coll_obj
                         collider_original_loc = coll_obj.location.copy()
                         coll_obj.select_set(True)
+                        
+                        # Fix collider face orientation if requested
+                        if self.flip_normals:
+                            self.fix_face_orientation(coll_obj)
                         break
             
             # Prepare for export
@@ -422,8 +495,10 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
             export_settings = {
                 'filepath': filepath,
                 'use_selection': True,
-                'axis_forward': 'Y',
-                'axis_up': 'Z',
+                # FIX: Changed axis_forward from 'Y' to '-Z' and axis_up from 'Z' to 'Y'
+                # This corrects the coordinate system for Enfusion Engine
+                'axis_forward': '-Z' if self.use_correct_axes else 'Y',  
+                'axis_up': 'Y' if self.use_correct_axes else 'Z',
                 'use_mesh_modifiers': True,
                 'use_armature_deform_only': False,
                 'bake_anim': False,
@@ -559,6 +634,14 @@ class VIEW3D_PT_arma_reforger_tools(bpy.types.Panel):
         row = layout.row()
         row.scale_y = 2.0  # Make the button even bigger for easy access
         row.operator(ExportArmaReforgerAsset.bl_idname, text="Export to Arma", icon='EXPORT')
+        
+        # FIX: Add fix inverted faces quick toggle
+        row = layout.row()
+        row.prop(context.scene, "ar_flip_normals")
+        
+        # FIX: Add use correct axes quick toggle
+        row = layout.row()
+        row.prop(context.scene, "ar_use_correct_axes")
 
 
 # Register and unregister functions
@@ -605,6 +688,19 @@ def register_properties():
         default=True,
     )
     
+    # FIX: Add quick access properties for the sidebar
+    bpy.types.Scene.ar_flip_normals = BoolProperty(
+        name="Fix Inverted Faces",
+        description="Fix inverted faces by ensuring correct face orientation",
+        default=True,
+    )
+    
+    bpy.types.Scene.ar_use_correct_axes = BoolProperty(
+        name="Use Correct Axes",
+        description="Ensure Y-forward Z-up axes for Enfusion Engine",
+        default=True,
+    )
+    
     bpy.types.Scene.ar_export_path = StringProperty(
         name="Export Folder",
         description="Path to export FBX files",
@@ -618,6 +714,9 @@ def unregister_properties():
     del bpy.types.Scene.ar_export_colliders
     del bpy.types.Scene.ar_preserve_armature
     del bpy.types.Scene.ar_center_to_origin
+    # FIX: Unregister new properties
+    del bpy.types.Scene.ar_flip_normals
+    del bpy.types.Scene.ar_use_correct_axes
     del bpy.types.Scene.ar_export_path
 
 def register():
