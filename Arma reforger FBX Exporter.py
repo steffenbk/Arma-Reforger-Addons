@@ -18,6 +18,121 @@ bl_info = {
     "category": "Import-Export",
 }
 
+# Define scene properties early
+def register_properties():
+    bpy.types.Scene.ar_export_mode = EnumProperty(
+        name="Export Mode",
+        items=(
+            ('FULL', "Full Scene", "Export the entire scene as one asset"),
+            ('INDIVIDUAL', "Individual Parts", "Export selected meshes as individual assets"),
+        ),
+        default='FULL',
+    )
+    
+    bpy.types.Scene.ar_apply_transform = BoolProperty(
+        name="Apply Transform",
+        description="Apply object transformations before export",
+        default=True,
+    )
+    
+    bpy.types.Scene.ar_export_colliders = BoolProperty(
+        name="Export Colliders",
+        description="Export collision meshes with the objects",
+        default=True,
+    )
+    
+    bpy.types.Scene.ar_preserve_armature = BoolProperty(
+        name="Preserve Armature",
+        description="Preserve rigging and armature data",
+        default=True,
+    )
+    
+    bpy.types.Scene.ar_center_to_origin = BoolProperty(
+        name="Center to Origin",
+        description="Center geometry to world origin before export",
+        default=True,
+    )
+    
+    # FIX: Add quick access properties for the sidebar
+    bpy.types.Scene.ar_flip_normals = BoolProperty(
+        name="Fix Inverted Faces",
+        description="Fix inverted faces by ensuring correct face orientation",
+        default=True,
+    )
+    
+    bpy.types.Scene.ar_use_correct_axes = BoolProperty(
+        name="Use Correct Axes",
+        description="Ensure Y-forward Z-up axes for Enfusion Engine",
+        default=True,
+    )
+    
+    # New alignment options for the sidebar
+    bpy.types.Scene.ar_align_to_axis = BoolProperty(
+        name="Align to Axis",
+        description="Align objects to specified axis",
+        default=True,
+    )
+    
+    bpy.types.Scene.ar_alignment_axis = EnumProperty(
+        name="Alignment Axis",
+        items=(
+            ('Y', "Y Axis (Default)", "Align to Y axis as required by Enfusion engine"),
+            ('X', "X Axis", "Align to X axis"),
+            ('Z', "Z Axis", "Align to Z axis"),
+            ('CUSTOM', "Custom", "Use custom alignment rotation"),
+        ),
+        default='Y',
+    )
+    
+    bpy.types.Scene.ar_custom_rotation_x = FloatProperty(
+        name="X Rotation",
+        description="Custom X rotation (degrees)",
+        default=0.0,
+        min=-360.0,
+        max=360.0,
+        subtype='ANGLE',
+    )
+    
+    bpy.types.Scene.ar_custom_rotation_y = FloatProperty(
+        name="Y Rotation",
+        description="Custom Y rotation (degrees)",
+        default=0.0,
+        min=-360.0,
+        max=360.0,
+        subtype='ANGLE',
+    )
+    
+    bpy.types.Scene.ar_custom_rotation_z = FloatProperty(
+        name="Z Rotation",
+        description="Custom Z rotation (degrees)",
+        default=0.0,
+        min=-360.0,
+        max=360.0,
+        subtype='ANGLE',
+    )
+    
+    bpy.types.Scene.ar_export_path = StringProperty(
+        name="Export Folder",
+        description="Path to export FBX files",
+        default="//",  # Default to blend file location
+        subtype='DIR_PATH',
+    )
+
+def unregister_properties():
+    # Check if properties exist before removing them
+    props_to_remove = [
+        'ar_export_mode', 'ar_apply_transform', 'ar_export_colliders', 
+        'ar_preserve_armature', 'ar_center_to_origin', 'ar_flip_normals', 
+        'ar_use_correct_axes', 'ar_export_path', 'ar_align_to_axis', 
+        'ar_alignment_axis', 'ar_custom_rotation_x', 'ar_custom_rotation_y', 
+        'ar_custom_rotation_z'
+    ]
+    
+    for prop in props_to_remove:
+        if hasattr(bpy.types.Scene, prop):
+            delattr(bpy.types.Scene, prop)
+    
+
 class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
     """Export to Arma Reforger Enfusion Engine Format"""
     bl_idname = "export_scene.arma_reforger_asset"
@@ -87,21 +202,51 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
         default=True,
     )
     
-    # NEW: Add individual axis mode for better control over orientation
-    individual_axis_mode: EnumProperty(
-        name="Individual Axis Mode",
-        description="Coordinate system for individual exports",
-        items=(
-            ('DEFAULT', "Default Orientation", "Use the default orientation settings"),
-            ('CUSTOM', "Custom Orientation", "Use specific orientation for individual exports"),
-        ),
-        default='CUSTOM',
+    # Custom alignment options
+    align_to_axis: BoolProperty(
+        name="Align to Axis",
+        description="Align objects to specified axis",
+        default=True,
     )
     
-    align_to_y_axis: BoolProperty(
-        name="Align to Y-Axis",
-        description="Align objects to Y-axis as required by Enfusion engine",
-        default=True,
+    # Axis alignment options
+    alignment_axis: EnumProperty(
+        name="Alignment Axis",
+        items=(
+            ('Y', "Y Axis (Default)", "Align to Y axis as required by Enfusion engine"),
+            ('X', "X Axis", "Align to X axis"),
+            ('Z', "Z Axis", "Align to Z axis"),
+            ('CUSTOM', "Custom", "Use custom alignment rotation"),
+        ),
+        default='Y',
+    )
+    
+    # Custom rotation values when 'CUSTOM' is selected
+    custom_rotation_x: FloatProperty(
+        name="X Rotation",
+        description="Custom X rotation (degrees)",
+        default=0.0,
+        min=-360.0,
+        max=360.0,
+        subtype='ANGLE',
+    )
+    
+    custom_rotation_y: FloatProperty(
+        name="Y Rotation",
+        description="Custom Y rotation (degrees)",
+        default=0.0,
+        min=-360.0,
+        max=360.0,
+        subtype='ANGLE',
+    )
+    
+    custom_rotation_z: FloatProperty(
+        name="Z Rotation",
+        description="Custom Z rotation (degrees)",
+        default=0.0,
+        min=-360.0,
+        max=360.0,
+        subtype='ANGLE',
     )
     
     center_to_origin: BoolProperty(
@@ -162,7 +307,7 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
         description="Select a collection to temporarily delete during export",
         items=get_collection_items,
     )
-
+    
     def draw(self, context):
         layout = self.layout
         
@@ -171,8 +316,6 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
         if self.export_mode == 'INDIVIDUAL':
             layout.prop(self, "apply_transform")
             layout.prop(self, "export_colliders")
-            # Add the new individual axis mode option
-            layout.prop(self, "individual_axis_mode")
         
         layout.prop(self, "preserve_armature")
         layout.prop(self, "preserve_sockets")
@@ -181,7 +324,17 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
         box = layout.box()
         box.label(text="Enfusion Engine Settings")
         # "add_leaf_bones" option removed from UI - it's always off
-        box.prop(self, "align_to_y_axis")
+        box.prop(self, "align_to_axis")
+        
+        if self.align_to_axis:
+            box.prop(self, "alignment_axis")
+            
+            # Show custom rotation options only when CUSTOM is selected
+            if self.alignment_axis == 'CUSTOM':
+                row = box.row(align=True)
+                row.prop(self, "custom_rotation_x")
+                row.prop(self, "custom_rotation_y")
+                row.prop(self, "custom_rotation_z")
         
         # FIX: Add new options for fixing inverted faces
         box.prop(self, "flip_normals")
@@ -258,10 +411,167 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
         
         self.report({'INFO'}, f"Temporarily deleted collection: {display_name}")
         return True
+    # Helper function to apply object transformations
+    def apply_object_transform(self, obj, apply_location=False, apply_rotation=False, apply_scale=False):
+        """Helper function to apply object transformations"""
+        # Store current selection and active object
+        original_active = bpy.context.view_layer.objects.active
+        original_selected = [o for o in bpy.context.selected_objects]
+        
+        # Deselect all objects
+        bpy.ops.object.select_all(action='DESELECT')
+        
+        # Select and make active our target
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        
+        # Apply transformations
+        bpy.ops.object.transform_apply(
+            location=apply_location,
+            rotation=apply_rotation,
+            scale=apply_scale
+        )
+        
+        # Restore original selection
+        bpy.ops.object.select_all(action='DESELECT')
+        for o in original_selected:
+            if o.name in bpy.context.view_layer.objects:
+                o.select_set(True)
+        if original_active and original_active.name in bpy.context.view_layer.objects:
+            bpy.context.view_layer.objects.active = original_active
+    
+    # FIXED: Improved alignment function that actually rotates the object
+    def apply_alignment(self, obj):
+        """Apply alignment rotation to object based on selected axis"""
+        if not self.align_to_axis:
+            return None
             
+        # Store original rotation before any changes
+        original_rotation = obj.rotation_euler.copy()
+        original_matrix = obj.matrix_world.copy()
+        
+        print(f"Applying alignment to {obj.name} using {self.alignment_axis} axis")
+        
+        # Create a duplicate mesh for safety
+        has_been_duplicated = False
+        
+        try:
+            # Apply different alignment based on the selected axis
+            if self.alignment_axis == 'Y':
+                # Default Y-axis alignment
+                # We'll apply a specific rotation to ensure consistent orientation
+                print("Applying Y-axis alignment (default)")
+                # Reset rotation first
+                obj.rotation_mode = 'XYZ'
+                obj.rotation_euler = (0, 0, 0)
+                # Apply this to make it permanent
+                self.apply_object_transform(obj, apply_rotation=True)
+                
+                # Ensure the object is aligned to the Y-forward axis
+                # This additional rotation helps enforce the standard Enfusion orientation
+                obj.rotation_euler = (math.radians(0), math.radians(0), math.radians(0))
+                self.apply_object_transform(obj, apply_rotation=True)
+            
+            elif self.alignment_axis == 'X':
+                # Rotate to align with X-axis
+                print("Applying X-axis alignment")
+                obj.rotation_mode = 'XYZ'
+                obj.rotation_euler = (0, 0, math.radians(90))
+                # Apply transformation to make it permanent
+                self.apply_object_transform(obj, apply_rotation=True)
+            
+            elif self.alignment_axis == 'Z':
+                # Rotate to align with Z-axis
+                print("Applying Z-axis alignment")
+                obj.rotation_mode = 'XYZ'
+                obj.rotation_euler = (math.radians(90), 0, 0)
+                # Apply transformation to make it permanent
+                self.apply_object_transform(obj, apply_rotation=True)
+            
+            elif self.alignment_axis == 'CUSTOM':
+                # Apply custom rotation
+                print(f"Applying custom rotation: X={self.custom_rotation_x}, Y={self.custom_rotation_y}, Z={self.custom_rotation_z}")
+                obj.rotation_mode = 'XYZ'
+                obj.rotation_euler = (
+                    math.radians(self.custom_rotation_x),
+                    math.radians(self.custom_rotation_y),
+                    math.radians(self.custom_rotation_z)
+                )
+                # Apply transformation to make it permanent
+                self.apply_object_transform(obj, apply_rotation=True)
+        
+        except Exception as e:
+            print(f"Error during alignment: {e}")
+            import traceback
+            print(traceback.format_exc())
+            
+            # If we duplicated, clean up
+            if has_been_duplicated:
+                # Restore the original object
+                bpy.data.objects.remove(obj)
+        
+        print(f"Alignment complete for {obj.name}")
+        return original_matrix
+    
+    # More advanced matrix-based alignment
+    def apply_matrix_rotation(self, obj, axis='Y'):
+        """Apply rotation using matrix transformation for precise axis alignment"""
+        if not self.align_to_axis:
+            return None
+        
+        # Store original world matrix
+        original_matrix = obj.matrix_world.copy()
+        
+        print(f"Applying matrix-based alignment to {obj.name} for {axis} axis")
+        
+        try:
+            # For custom rotation, use euler angles
+            if axis == 'CUSTOM':
+                # Custom rotation - create rotation matrix from Euler angles
+                rot_mat = mathutils.Euler((
+                    math.radians(self.custom_rotation_x),
+                    math.radians(self.custom_rotation_y),
+                    math.radians(self.custom_rotation_z)
+                )).to_matrix().to_4x4()
+                
+                # Store current location
+                location = obj.location.copy()
+                
+                # Apply rotation - this creates a new orientation
+                obj.matrix_world = rot_mat @ obj.matrix_world
+                
+                # Apply to make permanent
+                self.apply_object_transform(obj, apply_rotation=True)
+                
+                return original_matrix
+            
+            # Otherwise use prefabricated rotations for standard axes
+            obj.rotation_mode = 'XYZ'
+            
+            if axis == 'Y':
+                # Standard Y-forward configuration
+                obj.rotation_euler = (0, 0, 0)
+            elif axis == 'X':
+                # X-forward configuration
+                obj.rotation_euler = (0, 0, math.radians(90))
+            elif axis == 'Z':
+                # Z-forward configuration
+                obj.rotation_euler = (math.radians(90), 0, 0)
+            
+            # Apply to make permanent
+            self.apply_object_transform(obj, apply_rotation=True)
+            
+            print(f"Matrix alignment complete for {obj.name}")
+            return original_matrix
+            
+        except Exception as e:
+            print(f"Error in matrix alignment: {e}")
+            import traceback
+            print(traceback.format_exc())
+        
     def execute(self, context):
         # Explicitly push an undo step before we start
-        if (self.center_to_origin or self.delete_collection) and self.use_auto_undo:
+        if (self.center_to_origin or self.delete_collection or self.align_to_axis) and self.use_auto_undo:
             bpy.ops.ed.undo_push(message="Before Arma Reforger Export")
         
         # Save current selection and mode
@@ -288,7 +598,10 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
         print(f"- Restore Positions: {self.restore_positions}")
         print(f"- Fix Inverted Faces: {self.flip_normals}")
         print(f"- Use Correct Axes: {self.use_correct_axes}")
-        print(f"- Individual Axis Mode: {self.individual_axis_mode}")
+        print(f"- Align to Axis: {self.align_to_axis}")
+        print(f"- Alignment Axis: {self.alignment_axis}")
+        if self.alignment_axis == 'CUSTOM':
+            print(f"- Custom Rotation: X={self.custom_rotation_x}, Y={self.custom_rotation_y}, Z={self.custom_rotation_z}")
         
         # Delete collection if requested
         deleted_collection = False
@@ -307,11 +620,15 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
                 self.export_individual_parts(context, base_path, base_name)
                 
             # If auto-undo is enabled, perform the delayed undo
-            if (self.center_to_origin or deleted_collection) and self.use_auto_undo:
+            if (self.center_to_origin or deleted_collection or self.align_to_axis) and self.use_auto_undo:
                 self.delayed_undo(context, self.undo_delay)
                 restoration_message = ""
                 if self.center_to_origin:
                     restoration_message += "object positions"
+                if self.align_to_axis:
+                    if restoration_message:
+                        restoration_message += ", "
+                    restoration_message += "object rotations"
                 if deleted_collection:
                     if restoration_message:
                         restoration_message += " and "
@@ -387,7 +704,9 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
         # Check if we need to center the entire scene
         original_locations = {}
         original_origins = {}
+        original_rotations = {}
         meshes_to_center = []
+        meshes_to_align = []
         
         # Fix mesh face orientation if requested
         if self.flip_normals:
@@ -395,6 +714,15 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
             for obj in context.scene.objects:
                 if obj.type == 'MESH':
                     self.fix_face_orientation(obj)
+        
+        # Apply alignments if requested
+        if self.align_to_axis:
+            print(f"Applying alignment with {self.alignment_axis} axis...")
+            for obj in context.scene.objects:
+                if obj.type == 'MESH':
+                    # Use the improved matrix rotation function
+                    original_rotations[obj] = self.apply_matrix_rotation(obj, self.alignment_axis)
+                    meshes_to_align.append(obj)
         
         if self.center_to_origin:
             print("Centering objects to origin...")
@@ -439,6 +767,14 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
             for obj, loc in original_locations.items():
                 print(f"Restoring {obj.name} to {loc}")
                 obj.location = loc
+            
+            # Restore original rotations if we applied alignment
+            if self.align_to_axis:
+                print("Restoring original rotations...")
+                for obj, mat in original_rotations.items():
+                    if mat:  # Check if we have a stored rotation
+                        print(f"Restoring rotation for {obj.name}")
+                        obj.matrix_world = mat
 
     def export_individual_parts(self, context, base_path, base_name):
         """Export selected meshes as individual assets"""
@@ -455,6 +791,11 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
             # Save original transform and origin data
             original_location = obj.location.copy()
             original_matrix_world = obj.matrix_world.copy()
+            
+            # Apply alignment if requested
+            original_rotation = None
+            if self.align_to_axis:
+                original_rotation = self.apply_matrix_rotation(obj, self.alignment_axis)
             
             # Deselect all objects without using operators
             for scene_obj in context.view_layer.objects:
@@ -473,6 +814,7 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
             # Find colliders if needed
             collider_obj = None
             collider_original_loc = None
+            collider_original_rot = None
             
             if self.export_colliders:
                 # This assumes colliders have a naming convention, adjust as needed
@@ -485,6 +827,10 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
                         collider_original_loc = coll_obj.location.copy()
                         coll_obj.select_set(True)
                         
+                        # Apply alignment to collider if needed
+                        if self.align_to_axis:
+                            collider_original_rot = self.apply_matrix_rotation(coll_obj, self.alignment_axis)
+                        
                         # Fix collider face orientation if requested
                         if self.flip_normals:
                             self.fix_face_orientation(coll_obj)
@@ -496,35 +842,18 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
                 # This is a simplification - in practice, apply_transform should be handled more carefully
                 bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
                 
-            if self.align_to_y_axis:
-                # Align to Y-axis if requested
-                # Rotate the object to the correct orientation for Arma Reforger
-                bpy.ops.object.select_all(action='DESELECT')
-                obj.select_set(True)
-                bpy.context.view_layer.objects.active = obj
-                
-                # Rotate 90 degrees around Z axis to align with game coordinate system
-                # This will make the wall run along the X axis
-                bpy.ops.transform.rotate(value=1.5708, orient_axis='Z')
-                
             # Center geometry if requested
             if self.center_to_origin:
                 self.center_object_to_origin(obj, self.center_mode)
-            
-            # Determine axis settings based on mode
-            axis_forward = 'Y'
-            axis_up = 'Z'
-            
-            if self.individual_axis_mode == 'DEFAULT':
-                axis_forward = '-Z' if self.use_correct_axes else 'Y'
-                axis_up = 'Y' if self.use_correct_axes else 'Z'
             
             # Export settings for individual objects
             export_settings = {
                 'filepath': filepath,
                 'use_selection': True,
-                'axis_forward': axis_forward,
-                'axis_up': axis_up,
+                # FIX: Changed axis_forward from 'Y' to '-Z' and axis_up from 'Z' to 'Y'
+                # This corrects the coordinate system for Enfusion Engine
+                'axis_forward': '-Z' if self.use_correct_axes else 'Y',  
+                'axis_up': 'Y' if self.use_correct_axes else 'Z',
                 'use_mesh_modifiers': True,
                 'use_armature_deform_only': False,
                 'bake_anim': False,
@@ -544,10 +873,20 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
                 print(f"Restoring {obj.name} to original position: {original_location}")
                 obj.location = original_location
                 
+                # Restore original rotation if we applied alignment
+                if original_rotation:
+                    print(f"Restoring rotation for {obj.name}")
+                    obj.matrix_world = original_rotation
+                
                 # Restore collider if found
                 if collider_obj and collider_original_loc:
                     print(f"Restoring collider {collider_obj.name} to original position: {collider_original_loc}")
                     collider_obj.location = collider_original_loc
+                    
+                    # Restore collider rotation if we applied alignment
+                    if collider_original_rot:
+                        print(f"Restoring rotation for collider {collider_obj.name}")
+                        collider_obj.matrix_world = collider_original_rot
 
     def center_object_to_origin(self, obj, center_mode):
         """Center an object to the world origin based on the specified mode"""
@@ -643,8 +982,7 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
         if original_active and original_active.name in bpy.context.view_layer.objects:
             bpy.context.view_layer.objects.active = original_active
 
-
-# Add sidebar panel for quick access
+# Add sidebar panel for quick access - simplified version
 class VIEW3D_PT_arma_reforger_tools(bpy.types.Panel):
     """Arma Reforger Tools Sidebar Panel"""
     bl_label = "AR Export"
@@ -661,17 +999,9 @@ class VIEW3D_PT_arma_reforger_tools(bpy.types.Panel):
         row.scale_y = 2.0  # Make the button even bigger for easy access
         row.operator(ExportArmaReforgerAsset.bl_idname, text="Export to Arma", icon='EXPORT')
         
-        # FIX: Add fix inverted faces quick toggle
-        row = layout.row()
-        row.prop(context.scene, "ar_flip_normals")
-        
-        # FIX: Add use correct axes quick toggle
-        row = layout.row()
-        row.prop(context.scene, "ar_use_correct_axes")
-
-        # NEW: Add individual axis mode toggle
-        row = layout.row()
-        row.prop(context.scene, "ar_individual_axis_mode")
+        # Show a small info text that all options are in the export dialog
+        box = layout.box()
+        box.label(text="Options available in export dialog", icon='INFO')
 
 
 # Register and unregister functions
@@ -683,80 +1013,43 @@ classes = (
 def menu_func_export(self, context):
     self.layout.operator(ExportArmaReforgerAsset.bl_idname, text="Arma Reforger Asset (.fbx)")
 
-# Define scene properties for the sidebar
-def register_properties():
-    bpy.types.Scene.ar_export_mode = EnumProperty(
-        name="Export Mode",
-        items=(
-            ('FULL', "Full Scene", "Export the entire scene as one asset"),
-            ('INDIVIDUAL', "Individual Parts", "Export selected meshes as individual assets"),
-        ),
-        default='FULL',
-    )
-    
-    bpy.types.Scene.ar_apply_transform = BoolProperty(
-        name="Apply Transform",
-        description="Apply object transformations before export",
-        default=True,
-    )
-    
-    bpy.types.Scene.ar_export_colliders = BoolProperty(
-        name="Export Colliders",
-        description="Export collision meshes with the objects",
-        default=True,
-    )
-    
-    bpy.types.Scene.ar_preserve_armature = BoolProperty(
-        name="Preserve Armature",
-        description="Preserve rigging and armature data",
-        default=True,
-    )
-    
-    bpy.types.Scene.ar_center_to_origin = BoolProperty(
-        name="Center to Origin",
-        description="Center geometry to world origin before export",
-        default=True,
-    )
-    
-    # FIX: Add quick access properties for the sidebar
-    bpy.types.Scene.ar_flip_normals = BoolProperty(
-        name="Fix Inverted Faces",
-        description="Fix inverted faces by ensuring correct face orientation",
-        default=True,
-    )
-    
-    bpy.types.Scene.ar_use_correct_axes = BoolProperty(
-        name="Use Correct Axes",
-        description="Ensure Y-forward Z-up axes for Enfusion Engine",
-        default=True,
-    )
-    
-    # NEW: Add individual axis mode property for quick access
-    bpy.types.Scene.ar_individual_axis_mode = EnumProperty(
-        name="Individual Export Axes",
-        description="Axis orientation for individual exports",
-        items=(
-            ('DEFAULT', "Default", "Use default coordinate system"),
-            ('CUSTOM', "Y-Forward Z-Up", "Use Y-forward Z-up (game standard)"),
-        ),
-        default='CUSTOM',
-    )
-    
-    bpy.types.Scene.ar_export_path = StringProperty(
-        name="Export Folder",
-        description="Path to export FBX files",
-        default="//",  # Default to blend file location
-        subtype='DIR_PATH',
-    )
+def register():
+    # Use try-except to handle any registration errors
+    try:
+        # First register properties
+        register_properties()
+        
+        # Then register classes
+        for cls in classes:
+            bpy.utils.register_class(cls)
+            
+        # Add export menu item
+        bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
+        
+        print("Arma Reforger Asset Exporter registered successfully")
+    except Exception as e:
+        print(f"Error registering Arma Reforger Asset Exporter: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
 
-def unregister_properties():
-    del bpy.types.Scene.ar_export_mode
-    del bpy.types.Scene.ar_apply_transform
-    del bpy.types.Scene.ar_export_colliders
-    del bpy.types.Scene.ar_preserve_armature
-    del bpy.types.Scene.ar_center_to_origin
-    # FIX: Unregister new properties
-    del bpy.types.Scene.ar_flip_normals
-    del bpy.types.Scene.ar_use_correct_axes
-    del bpy.types.Scene.ar_individual_axis_mode
-    del bpy.types.Scene.ar_export_path
+def unregister():
+    # Use try-except to handle any unregistration errors
+    try:
+        # Remove export menu item
+        bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
+        
+        # Unregister classes
+        for cls in reversed(classes):
+            bpy.utils.unregister_class(cls)
+            
+        # Unregister properties
+        unregister_properties()
+        
+        print("Arma Reforger Asset Exporter unregistered successfully")
+    except Exception as e:
+        print(f"Error unregistering Arma Reforger Asset Exporter: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+
+if __name__ == "__main__":
+    register()
