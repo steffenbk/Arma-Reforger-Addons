@@ -9,7 +9,7 @@ from bpy_extras.io_utils import ExportHelper
 bl_info = {
     "name": "Arma Reforger Asset Exporter",
     "author": "Your Name",
-    "version": (1, 3),
+    "version": (1, 4),
     "blender": (4, 0, 0),
     "location": "File > Export > Arma Reforger Asset (.fbx) / Sidebar > AR Tools",
     "description": "Export assets for Arma Reforger Enfusion Engine",
@@ -87,6 +87,17 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
         default=True,
     )
     
+    # NEW: Add individual axis mode for better control over orientation
+    individual_axis_mode: EnumProperty(
+        name="Individual Axis Mode",
+        description="Coordinate system for individual exports",
+        items=(
+            ('DEFAULT', "Default Orientation", "Use the default orientation settings"),
+            ('CUSTOM', "Custom Orientation", "Use specific orientation for individual exports"),
+        ),
+        default='CUSTOM',
+    )
+    
     align_to_y_axis: BoolProperty(
         name="Align to Y-Axis",
         description="Align objects to Y-axis as required by Enfusion engine",
@@ -160,6 +171,8 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
         if self.export_mode == 'INDIVIDUAL':
             layout.prop(self, "apply_transform")
             layout.prop(self, "export_colliders")
+            # Add the new individual axis mode option
+            layout.prop(self, "individual_axis_mode")
         
         layout.prop(self, "preserve_armature")
         layout.prop(self, "preserve_sockets")
@@ -275,6 +288,7 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
         print(f"- Restore Positions: {self.restore_positions}")
         print(f"- Fix Inverted Faces: {self.flip_normals}")
         print(f"- Use Correct Axes: {self.use_correct_axes}")
+        print(f"- Individual Axis Mode: {self.individual_axis_mode}")
         
         # Delete collection if requested
         deleted_collection = False
@@ -484,21 +498,33 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
                 
             if self.align_to_y_axis:
                 # Align to Y-axis if requested
-                # This would depend on how your models are oriented initially
-                pass
+                # Rotate the object to the correct orientation for Arma Reforger
+                bpy.ops.object.select_all(action='DESELECT')
+                obj.select_set(True)
+                bpy.context.view_layer.objects.active = obj
+                
+                # Rotate 90 degrees around Z axis to align with game coordinate system
+                # This will make the wall run along the X axis
+                bpy.ops.transform.rotate(value=1.5708, orient_axis='Z')
                 
             # Center geometry if requested
             if self.center_to_origin:
                 self.center_object_to_origin(obj, self.center_mode)
             
+            # Determine axis settings based on mode
+            axis_forward = 'Y'
+            axis_up = 'Z'
+            
+            if self.individual_axis_mode == 'DEFAULT':
+                axis_forward = '-Z' if self.use_correct_axes else 'Y'
+                axis_up = 'Y' if self.use_correct_axes else 'Z'
+            
             # Export settings for individual objects
             export_settings = {
                 'filepath': filepath,
                 'use_selection': True,
-                # FIX: Changed axis_forward from 'Y' to '-Z' and axis_up from 'Z' to 'Y'
-                # This corrects the coordinate system for Enfusion Engine
-                'axis_forward': '-Z' if self.use_correct_axes else 'Y',  
-                'axis_up': 'Y' if self.use_correct_axes else 'Z',
+                'axis_forward': axis_forward,
+                'axis_up': axis_up,
                 'use_mesh_modifiers': True,
                 'use_armature_deform_only': False,
                 'bake_anim': False,
@@ -643,6 +669,10 @@ class VIEW3D_PT_arma_reforger_tools(bpy.types.Panel):
         row = layout.row()
         row.prop(context.scene, "ar_use_correct_axes")
 
+        # NEW: Add individual axis mode toggle
+        row = layout.row()
+        row.prop(context.scene, "ar_individual_axis_mode")
+
 
 # Register and unregister functions
 classes = (
@@ -701,6 +731,17 @@ def register_properties():
         default=True,
     )
     
+    # NEW: Add individual axis mode property for quick access
+    bpy.types.Scene.ar_individual_axis_mode = EnumProperty(
+        name="Individual Export Axes",
+        description="Axis orientation for individual exports",
+        items=(
+            ('DEFAULT', "Default", "Use default coordinate system"),
+            ('CUSTOM', "Y-Forward Z-Up", "Use Y-forward Z-up (game standard)"),
+        ),
+        default='CUSTOM',
+    )
+    
     bpy.types.Scene.ar_export_path = StringProperty(
         name="Export Folder",
         description="Path to export FBX files",
@@ -717,31 +758,5 @@ def unregister_properties():
     # FIX: Unregister new properties
     del bpy.types.Scene.ar_flip_normals
     del bpy.types.Scene.ar_use_correct_axes
+    del bpy.types.Scene.ar_individual_axis_mode
     del bpy.types.Scene.ar_export_path
-
-def register():
-    # Use try-except to handle any registration errors
-    try:
-        for cls in classes:
-            bpy.utils.register_class(cls)
-        bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
-        # We're not using properties in the simplified version
-        # but keeping registration in case we need them again
-        register_properties()
-        print("Arma Reforger Asset Exporter registered successfully")
-    except Exception as e:
-        print(f"Error registering Arma Reforger Asset Exporter: {str(e)}")
-
-def unregister():
-    # Use try-except to handle any unregistration errors
-    try:
-        bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
-        unregister_properties()
-        for cls in reversed(classes):
-            bpy.utils.unregister_class(cls)
-        print("Arma Reforger Asset Exporter unregistered successfully")
-    except Exception as e:
-        print(f"Error unregistering Arma Reforger Asset Exporter: {str(e)}")
-
-if __name__ == "__main__":
-    register()
