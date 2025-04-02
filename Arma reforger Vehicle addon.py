@@ -1642,6 +1642,8 @@ class ARVEHICLES_OT_create_empties(bpy.types.Operator):
             
         return {'FINISHED'}
 
+
+
 class ARVEHICLES_OT_separate_components(bpy.types.Operator):
     """Separate selected components into individual objects for Arma Reforger"""
     bl_idname = "arvehicles.separate_components"
@@ -1671,6 +1673,12 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
     add_socket: bpy.props.BoolProperty(
         name="Add Socket",
         description="Add a socket empty at the component's location",
+        default=True
+    )
+    
+    set_origin_to_socket: bpy.props.BoolProperty(
+        name="Set Origin to Socket",
+        description="Set the object's origin to the same location as the socket",
         default=True
     )
     
@@ -1737,6 +1745,7 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         new_obj["component_type"] = self.component_type
         
         # Create a socket empty if requested
+        socket = None
         if self.add_socket:
             socket_name = f"VEHICLE_{self.component_type.upper()}_SOCKET_{len([o for o in bpy.data.objects if f'VEHICLE_{self.component_type.upper()}_SOCKET' in o.name]) + 1}"
             
@@ -1748,21 +1757,44 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
             # Add the socket to the current collection
             context.collection.objects.link(socket)
             
-            # NOTE: We do NOT parent either the socket or the component
-            # socket.parent = obj  <-- This line is removed
-            # new_obj.parent = socket  <-- This line is removed
-            
             # Add socket properties
             socket["socket_type"] = self.component_type
             socket["attached_part"] = new_obj.name
             socket["vehicle_part"] = "attachment_point"
+        
+        # Set origin to socket position if requested
+        if self.add_socket and self.set_origin_to_socket:
+            # Store the object's world matrix before changing origin
+            original_world_matrix = new_obj.matrix_world.copy()
+            
+            # Select only the new object and make it active
+            bpy.ops.object.select_all(action='DESELECT')
+            new_obj.select_set(True)
+            context.view_layer.objects.active = new_obj
+            
+            # Set the cursor to the socket's position
+            cursor_location = context.scene.cursor.location.copy()
+            context.scene.cursor.location = socket.location
+            
+            # Set the origin to the cursor position
+            bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
+            
+            # Restore cursor position
+            context.scene.cursor.location = cursor_location
         
         # Select only the new object
         bpy.ops.object.select_all(action='DESELECT')
         new_obj.select_set(True)
         context.view_layer.objects.active = new_obj
         
-        self.report({'INFO'}, f"Separated component '{new_name}'" + (" with unparented socket" if self.add_socket else ""))
+        # Build report message
+        report_msg = f"Separated component '{new_name}'"
+        if self.add_socket:
+            report_msg += " with socket"
+        if self.set_origin_to_socket and self.add_socket:
+            report_msg += ", origin set to socket"
+            
+        self.report({'INFO'}, report_msg)
         return {'FINISHED'}
     
     def invoke(self, context, event):
@@ -1777,6 +1809,10 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         
         # Socket options
         layout.prop(self, "add_socket")
+        
+        # Only show set_origin_to_socket option if add_socket is enabled
+        if self.add_socket:
+            layout.prop(self, "set_origin_to_socket")
 
 class ARVEHICLES_OT_parent_to_armature(bpy.types.Operator):
     """Parent selected meshes to the vehicle armature"""
