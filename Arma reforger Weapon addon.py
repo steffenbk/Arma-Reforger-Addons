@@ -113,7 +113,7 @@ class CREATE_SOCKET_OT_create_socket(bpy.types.Operator):
         
         # Create socket empty
         socket = bpy.data.objects.new(socket_name, None)
-        socket.empty_display_type = 'PLAIN AXES'
+        socket.empty_display_type = 'PLAIN_AXES'
         socket.empty_display_size = 0.05  # Smaller size for weapon sockets
         
         # Default location is at the object's location
@@ -1236,7 +1236,7 @@ class ARWEAPONS_OT_create_empties(bpy.types.Operator):
             ]
             for name in snap_empties:
                 if name not in bpy.data.objects:
-                    empty = self._create_empty(name, EMPTY_LOCATIONS[name], weapon_collection, 'PLAIN AXES', 0.04)
+                    empty = self._create_empty(name, EMPTY_LOCATIONS[name], weapon_collection, 'PLAIN_AXES', 0.04)
                     created_empties.append(name)
         
         if self.create_barrel_points:
@@ -1336,6 +1336,12 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         default='slot_dovetail'
     )
     
+    set_origin_to_socket: bpy.props.BoolProperty(
+        name="Set Origin to Socket",
+        description="Set the object's origin to the same location as the socket",
+        default=True
+    )
+    
     def execute(self, context):
         # Check if we're in edit mode with selected faces
         if context.mode != 'EDIT_MESH':
@@ -1395,42 +1401,57 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         new_obj = context.selected_objects[-1]
         new_obj.name = new_name
         
-        # Store the original world matrix before any parenting
-        original_matrix_world = new_obj.matrix_world.copy()
-        
         # Add component type property
         new_obj["component_type"] = self.component_type
         
+        socket = None
         # Create a socket empty if requested
         if self.add_socket:
             socket_name = f"{SOCKET_NAMES[self.socket_type]}_{len([o for o in bpy.data.objects if SOCKET_NAMES[self.socket_type] in o.name]) + 1}"
             
             socket = bpy.data.objects.new(socket_name, None)
-            socket.empty_display_type = 'PLAIN AXES'
+            socket.empty_display_type = 'PLAIN_AXES'
             socket.empty_display_size = 0.05  # Smaller for weapon parts
             socket.location = world_center
             
             # Add the socket to the current collection
             context.collection.objects.link(socket)
             
-            # DO NOT PARENT THE SOCKET - THIS IS REMOVED
-            # socket.parent = obj
-            
-            # DO NOT PARENT THE COMPONENT EITHER - THIS IS REMOVED
-            # new_obj.parent = socket
-            # new_obj.matrix_world = original_matrix_world
-            
             # Add socket properties
             socket["socket_type"] = self.socket_type
             socket["attached_part"] = new_obj.name
             socket["weapon_part"] = "attachment_point"
+        
+        # Set origin to socket position if requested
+        if self.add_socket and self.set_origin_to_socket:
+            # Select only the new object and make it active
+            bpy.ops.object.select_all(action='DESELECT')
+            new_obj.select_set(True)
+            context.view_layer.objects.active = new_obj
+            
+            # Set the cursor to the socket's position
+            cursor_location = context.scene.cursor.location.copy()
+            context.scene.cursor.location = socket.location
+            
+            # Set the origin to the cursor position
+            bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
+            
+            # Restore cursor position
+            context.scene.cursor.location = cursor_location
         
         # Select only the new object
         bpy.ops.object.select_all(action='DESELECT')
         new_obj.select_set(True)
         context.view_layer.objects.active = new_obj
         
-        self.report({'INFO'}, f"Separated component '{new_name}'" + (" with unparented socket" if self.add_socket else ""))
+        # Build report message
+        report_msg = f"Separated component '{new_name}'"
+        if self.add_socket:
+            report_msg += " with socket"
+        if self.set_origin_to_socket and self.add_socket:
+            report_msg += ", origin set to socket"
+            
+        self.report({'INFO'}, report_msg)
         return {'FINISHED'}
     
     def invoke(self, context, event):
@@ -1449,7 +1470,7 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         # Only show socket type if add_socket is checked
         if self.add_socket:
             layout.prop(self, "socket_type")
-
+            layout.prop(self, "set_origin_to_socket")
 class ARWEAPONS_PT_panel(bpy.types.Panel):
     """Arma Reforger Weapons Panel"""
     bl_label = "AR Weapons"
@@ -1542,6 +1563,5 @@ if __name__ == "__main__":
     register()
     
     
-
 
 
