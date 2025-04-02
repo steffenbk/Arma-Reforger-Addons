@@ -96,6 +96,83 @@ def get_memory_points_collection():
     return memory_points
 
 
+class ARBUILDINGS_OT_orient_building(bpy.types.Operator):
+    """Orient building along the Y+ axis (Blender) as required by Arma Reforger"""
+    bl_idname = "arbuildings.orient_building"
+    bl_label = "Orient Building to Center"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    def execute(self, context):
+        if len(context.selected_objects) == 0:
+            self.report({'ERROR'}, "Please select the building meshes")
+            return {'CANCELLED'}
+        
+        # Get all selected mesh objects
+        mesh_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
+        
+        if not mesh_objects:
+            self.report({'ERROR'}, "No mesh objects selected")
+            return {'CANCELLED'}
+        
+        # Create an empty at the world origin to use as a pivot
+        pivot = bpy.data.objects.new("RotationPivot", None)
+        context.collection.objects.link(pivot)
+        pivot.location = (0, 0, 0)
+        
+        # Calculate current building dimensions and center
+        min_x, min_y, min_z = float('inf'), float('inf'), float('inf')
+        max_x, max_y, max_z = float('-inf'), float('-inf'), float('-inf')
+        
+        for obj in mesh_objects:
+            for vert in obj.data.vertices:
+                world_co = obj.matrix_world @ vert.co
+                min_x = min(min_x, world_co.x)
+                min_y = min(min_y, world_co.y)
+                min_z = min(min_z, world_co.z)
+                max_x = max(max_x, world_co.x)
+                max_y = max(max_y, world_co.y)
+                max_z = max(max_z, world_co.z)
+        
+        # Calculate center of building
+        center_x = (min_x + max_x) / 2
+        center_y = (min_y + max_y) / 2
+        center_z = (min_z + max_z) / 2
+        
+        # Store original parents and parenting temporarily
+        original_parents = {}
+        original_locations = {}
+        for obj in mesh_objects:
+            original_parents[obj] = obj.parent
+            original_locations[obj] = obj.location.copy()
+            obj.parent = pivot
+        
+        # Orient the building to Y+ axis (this assumes building is initially facing along X+ or Z+)
+        # You may need to adjust this rotation based on your initial orientation
+        pivot.rotation_euler = (0, 0, 0)
+        
+        # First apply rotation to ensure building faces Y+
+        bpy.ops.object.select_all(action='DESELECT')
+        pivot.select_set(True)
+        context.view_layer.objects.active = pivot
+        bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
+        
+        # Move pivot to center of building
+        pivot.location = (-center_x, -center_y, -center_z)
+        
+        # Apply location to center the building at world origin
+        bpy.ops.object.transform_apply(location=True, rotation=False, scale=False)
+        
+        # Restore original parenting
+        for obj in mesh_objects:
+            obj.parent = original_parents[obj]
+        
+        # Remove the temporary pivot
+        bpy.data.objects.remove(pivot)
+        
+        self.report({'INFO'}, "Building oriented along Y+ axis and centered at origin")
+        return {'FINISHED'}
+
+
 class ARBUILDINGS_OT_separate_component(bpy.types.Operator):
     """Separate selected component and add appropriate socket"""
     bl_idname = "arbuildings.separate_component"
@@ -133,8 +210,12 @@ class ARBUILDINGS_OT_separate_component(bpy.types.Operator):
         default=True
     )
     
-
-
+    flip_normals: bpy.props.BoolProperty(
+        name="Flip Normals",
+        description="Flip the normals of the separated component",
+        default=False
+    )
+    
     def execute(self, context):
         # Check if we're in edit mode with selected faces
         if context.mode != 'EDIT_MESH':
@@ -802,6 +883,11 @@ class ARBUILDINGS_PT_panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         
+        # Orientation Tools
+        box = layout.box()
+        box.label(text="Orientation Tools", icon='ORIENTATION_VIEW')
+        box.operator("arbuildings.orient_building", icon='EMPTY_ARROWS')
+        
         # Component Separation
         box = layout.box()
         box.label(text="Component Tools", icon='MOD_BUILD')
@@ -830,6 +916,7 @@ class ARBUILDINGS_PT_panel(bpy.types.Panel):
 
 # Registration
 classes = (
+    ARBUILDINGS_OT_orient_building,  # Added new orient building operator
     ARBUILDINGS_OT_separate_component,
     ARBUILDINGS_OT_create_building_socket,
     ARBUILDINGS_OT_create_firegeo_collision,
