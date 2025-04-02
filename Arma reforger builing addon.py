@@ -172,7 +172,6 @@ class ARBUILDINGS_OT_orient_building(bpy.types.Operator):
         self.report({'INFO'}, "Building oriented along Y+ axis and centered at origin")
         return {'FINISHED'}
 
-
 class ARBUILDINGS_OT_separate_component(bpy.types.Operator):
     """Separate selected component and add appropriate socket"""
     bl_idname = "arbuildings.separate_component"
@@ -196,6 +195,24 @@ class ARBUILDINGS_OT_separate_component(bpy.types.Operator):
         name="Add Socket",
         description="Add a socket empty at the component's location",
         default=True
+    )
+    
+    snap_to_axis: bpy.props.BoolProperty(
+        name="Snap Socket to Axis",
+        description="Snap socket to the closest global axis (X, Y, or Z)",
+        default=False
+    )
+    
+    snap_axis_preference: bpy.props.EnumProperty(
+        name="Preferred Axis",
+        description="Preferred axis for snapping (if distances are close)",
+        items=[
+            ('X', "X Axis", "Prefer X axis"),
+            ('Y', "Y Axis", "Prefer Y axis"),
+            ('Z', "Z Axis", "Prefer Z axis"),
+            ('AUTO', "Auto (Closest)", "Automatically choose closest axis"),
+        ],
+        default='AUTO'
     )
     
     add_firegeo: bpy.props.BoolProperty(
@@ -266,6 +283,7 @@ class ARBUILDINGS_OT_separate_component(bpy.types.Operator):
         
         # Add component type property
         new_obj["component_type"] = self.component_type
+        
         # Create a socket empty if requested
         socket = None
         if self.add_socket:
@@ -273,7 +291,15 @@ class ARBUILDINGS_OT_separate_component(bpy.types.Operator):
             socket = bpy.data.objects.new(socket_name, None)
             socket.empty_display_type = 'PLAIN_AXES'
             socket.empty_display_size = 0.05
-            socket.location = world_center
+            
+            # Apply socket position with optional axis snapping
+            socket_position = world_center.copy()
+            
+            # Snap to closest axis if requested
+            if self.snap_to_axis:
+                socket_position = self._snap_to_closest_axis(socket_position)
+                
+            socket.location = socket_position
             
             # Get the Memory Points collection for this socket
             memory_points = get_memory_points_collection()
@@ -310,6 +336,7 @@ class ARBUILDINGS_OT_separate_component(bpy.types.Operator):
             
             # Restore the world matrix to keep the object in the same place
             # (this step is skipped to actually move the object to have its origin at the socket)
+        
         # Flip normals if requested
         if self.flip_normals:
             # Select only the new object and make it active
@@ -340,6 +367,8 @@ class ARBUILDINGS_OT_separate_component(bpy.types.Operator):
         report_msg = f"Separated component '{new_name}'"
         if self.add_socket:
             report_msg += " with socket"
+            if self.snap_to_axis:
+                report_msg += " (axis-snapped)"
         if self.set_origin_to_socket:
             report_msg += ", origin set to socket"
         if self.flip_normals:
@@ -347,6 +376,45 @@ class ARBUILDINGS_OT_separate_component(bpy.types.Operator):
             
         self.report({'INFO'}, report_msg)
         return {'FINISHED'}
+        
+    def _snap_to_closest_axis(self, position):
+        """Snap the given position to the closest global axis"""
+        # Copy the position to avoid modifying the original
+        pos = position.copy()
+        
+        if self.snap_axis_preference == 'AUTO':
+            # Find distances to each axis
+            dist_to_x = math.sqrt(pos.y**2 + pos.z**2)  # Distance to X axis
+            dist_to_y = math.sqrt(pos.x**2 + pos.z**2)  # Distance to Y axis
+            dist_to_z = math.sqrt(pos.x**2 + pos.y**2)  # Distance to Z axis
+            
+            # Find the minimum distance
+            min_dist = min(dist_to_x, dist_to_y, dist_to_z)
+            
+            # Snap to the closest axis
+            if min_dist == dist_to_x:
+                pos.y = 0
+                pos.z = 0
+            elif min_dist == dist_to_y:
+                pos.x = 0
+                pos.z = 0
+            else:  # min_dist == dist_to_z
+                pos.x = 0
+                pos.y = 0
+        else:
+            # Snap to the preferred axis
+            if self.snap_axis_preference == 'X':
+                pos.y = 0
+                pos.z = 0
+            elif self.snap_axis_preference == 'Y':
+                pos.x = 0
+                pos.z = 0
+            elif self.snap_axis_preference == 'Z':
+                pos.x = 0
+                pos.y = 0
+                
+        return pos
+    
     def _create_firegeo(self, context, obj):
         """Create a simplified FireGeo collision mesh for the component"""
         # Store original world matrix
@@ -410,6 +478,11 @@ class ARBUILDINGS_OT_separate_component(bpy.types.Operator):
         if self.add_socket:
             box = layout.box()
             box.prop(self, "set_origin_to_socket")
+            box.prop(self, "snap_to_axis")
+            
+            # Only show axis preference if snap_to_axis is enabled
+            if self.snap_to_axis:
+                box.prop(self, "snap_axis_preference")
         
         layout.prop(self, "add_firegeo")
         layout.prop(self, "flip_normals")
