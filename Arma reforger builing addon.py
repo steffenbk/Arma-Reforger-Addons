@@ -8,7 +8,7 @@ Created on Tue Mar 25 14:30:45 2025
 bl_info = {
     "name": "Arma Reforger Building Destruction Tools",
     "author": "Steffen & Claude",
-    "version": (1, 0),
+    "version": (1, 1),
     "blender": (2, 93, 0),
     "location": "View3D > Sidebar > AR Buildings",
     "description": "Tools for preparing destructible buildings for Arma Reforger",
@@ -23,9 +23,9 @@ import random
 from mathutils import Vector, Matrix
 import bmesh
 
+
 # Default socket names for different building parts
 # Format follows the same pattern as working weapon tool sockets
-# Default socket names for different building parts
 BUILDING_SOCKET_NAMES = {
     "wall": "slot_building_wall_socket",
     "door": "slot_building_door_socket", 
@@ -82,9 +82,6 @@ VEHICLE_SOCKET_NAMES = {
     "other": "VEHICLE_PART_SOCKET"
 }
 
-# Modified socket creation functions that mimic exactly what happens
-# when manually creating plain axes empties in Blender
-
 def get_memory_points_collection():
     """Get or create the Memory Points collection"""
     if "Memory Points" in bpy.data.collections:
@@ -130,6 +127,14 @@ class ARBUILDINGS_OT_separate_component(bpy.types.Operator):
         default=True
     )
     
+    set_origin_to_socket: bpy.props.BoolProperty(
+        name="Set Origin to Socket",
+        description="Set the object's origin to the same location as the socket",
+        default=True
+    )
+    
+
+
     def execute(self, context):
         # Check if we're in edit mode with selected faces
         if context.mode != 'EDIT_MESH':
@@ -180,8 +185,8 @@ class ARBUILDINGS_OT_separate_component(bpy.types.Operator):
         
         # Add component type property
         new_obj["component_type"] = self.component_type
-        
         # Create a socket empty if requested
+        socket = None
         if self.add_socket:
             socket_name = f"{BUILDING_SOCKET_NAMES[self.component_type].lower()}_{len([o for o in bpy.data.objects if BUILDING_SOCKET_NAMES[self.component_type].lower() in o.name.lower()]) + 1}"
             socket = bpy.data.objects.new(socket_name, None)
@@ -202,6 +207,45 @@ class ARBUILDINGS_OT_separate_component(bpy.types.Operator):
             
             # DO NOT PARENT THE SOCKET - removed parenting line
         
+        # Set origin to socket position if requested
+        if self.add_socket and self.set_origin_to_socket:
+            # Store the object's world matrix before changing origin
+            original_world_matrix = new_obj.matrix_world.copy()
+            
+            # Select only the new object and make it active
+            bpy.ops.object.select_all(action='DESELECT')
+            new_obj.select_set(True)
+            context.view_layer.objects.active = new_obj
+            
+            # Set the cursor to the socket's position
+            cursor_location = context.scene.cursor.location.copy()
+            context.scene.cursor.location = socket.location
+            
+            # Set the origin to the cursor position
+            bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
+            
+            # Restore cursor position
+            context.scene.cursor.location = cursor_location
+            
+            # Restore the world matrix to keep the object in the same place
+            # (this step is skipped to actually move the object to have its origin at the socket)
+        # Flip normals if requested
+        if self.flip_normals:
+            # Select only the new object and make it active
+            bpy.ops.object.select_all(action='DESELECT')
+            new_obj.select_set(True)
+            context.view_layer.objects.active = new_obj
+            
+            # Enter edit mode
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.mesh.select_all(action='SELECT')
+            
+            # Flip normals
+            bpy.ops.mesh.flip_normals()
+            
+            # Return to object mode
+            bpy.ops.object.mode_set(mode='OBJECT')
+        
         # Create FireGeo for the component if requested
         if self.add_firegeo:
             self._create_firegeo(context, new_obj)
@@ -211,9 +255,17 @@ class ARBUILDINGS_OT_separate_component(bpy.types.Operator):
         new_obj.select_set(True)
         context.view_layer.objects.active = new_obj
         
-        self.report({'INFO'}, f"Separated component '{new_name}'" + (" with socket" if self.add_socket else ""))
+        # Build report message
+        report_msg = f"Separated component '{new_name}'"
+        if self.add_socket:
+            report_msg += " with socket"
+        if self.set_origin_to_socket:
+            report_msg += ", origin set to socket"
+        if self.flip_normals:
+            report_msg += ", normals flipped"
+            
+        self.report({'INFO'}, report_msg)
         return {'FINISHED'}
-    
     def _create_firegeo(self, context, obj):
         """Create a simplified FireGeo collision mesh for the component"""
         # Store original world matrix
@@ -272,7 +324,14 @@ class ARBUILDINGS_OT_separate_component(bpy.types.Operator):
         
         # Socket and FireGeo options
         layout.prop(self, "add_socket")
+        
+        # Only show these options if add_socket is enabled
+        if self.add_socket:
+            box = layout.box()
+            box.prop(self, "set_origin_to_socket")
+        
         layout.prop(self, "add_firegeo")
+        layout.prop(self, "flip_normals")
 
 class ARBUILDINGS_OT_create_building_socket(bpy.types.Operator):
     """Create a socket empty for building component attachment"""
@@ -467,7 +526,6 @@ class ARBUILDINGS_OT_create_firegeo_collision(bpy.types.Operator):
         max=0.1,
         step=0.01
     )
-    
     def execute(self, context):
         # Check if objects are selected
         if len(context.selected_objects) == 0:
@@ -526,7 +584,6 @@ class ARBUILDINGS_OT_create_firegeo_collision(bpy.types.Operator):
             self.report({'INFO'}, "No new FireGeo meshes created (components might already have them)")
             
         return {'FINISHED'}
-    
     def _create_convex_hull(self, context, source_obj, fire_geo_obj):
         """Create a convex hull based FireGeo collision"""
         # Get vertices from the source object
@@ -632,8 +689,7 @@ class ARBUILDINGS_OT_create_firegeo_collision(bpy.types.Operator):
     
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
-
-
+    
 class ARBUILDINGS_OT_convert_existing_sockets(bpy.types.Operator):
     """Clear parent relationships from socket empties to make them compatible with Arma Reforger"""
     bl_idname = "arbuildings.convert_existing_sockets"
@@ -672,7 +728,7 @@ class ARBUILDINGS_OT_convert_existing_sockets(bpy.types.Operator):
             self.report({'INFO'}, "No socket empties with parent relationships found")
             
         return {'FINISHED'}
-
+    
 class ARBUILDINGS_OT_manage_collections(bpy.types.Operator):
     """Create and organize collections for Arma Reforger building workflow"""
     bl_idname = "arbuildings.manage_collections"
@@ -734,7 +790,7 @@ class ARBUILDINGS_OT_manage_collections(bpy.types.Operator):
         for coll in obj.users_collection:
             if coll != target_collection:
                 coll.objects.unlink(obj)
-
+    
 class ARBUILDINGS_PT_panel(bpy.types.Panel):
     """Arma Reforger Building Destruction Panel"""
     bl_label = "AR Buildings"
