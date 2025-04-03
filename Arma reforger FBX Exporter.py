@@ -236,13 +236,6 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
         default='GEOMETRY',
     )
     
-    # New property for controlling whether to recalculate geometry center
-    recalculate_geometry_center: BoolProperty(
-        name="Recalculate Geometry Center",
-        description="Recalculate the geometry center (disable to use the current object origin)",
-        default=False,
-    )
-    
     # Add a property to control whether to use undo after export
     use_auto_undo: BoolProperty(
         name="Auto Undo After Export",
@@ -320,11 +313,6 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
         box.prop(self, "center_to_origin")
         if self.center_to_origin:
             box.prop(self, "center_mode")
-            
-            # Show the recalculate option only when GEOMETRY mode is selected
-            if self.center_mode == 'GEOMETRY':
-                box.prop(self, "recalculate_geometry_center")
-                
             box.prop(self, "use_auto_undo")
             if self.use_auto_undo:
                 box.prop(self, "undo_delay")
@@ -573,8 +561,6 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
         print(f"- Export Mode: {self.export_mode}")
         print(f"- Center to Origin: {self.center_to_origin}")
         print(f"- Center Mode: {self.center_mode}")
-        if self.center_mode == 'GEOMETRY':
-            print(f"- Recalculate Geometry Center: {self.recalculate_geometry_center}")
         print(f"- Auto Undo: {self.use_auto_undo}")
         print(f"- Undo Delay: {self.undo_delay} seconds")
         print(f"- Restore Positions: {self.restore_positions}")
@@ -592,7 +578,7 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
             else:
                 print("Failed to delete collection for export")
             
-        # We need to handle each export mode in a way that doesn't rely on context-sensitive operators
+# We need to handle each export mode in a way that doesn't rely on context-sensitive operators
         try:
             if self.export_mode == 'FULL':
                 self.export_full_scene(context, self.filepath)
@@ -819,187 +805,135 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
         original_active = bpy.context.view_layer.objects.active
         original_selected = [o for o in bpy.context.selected_objects]
         
-        # Deselect all objects without using operators
-        for scene_obj in bpy.context.view_layer.objects:
-            scene_obj.select_set(False)
+        # Store original cursor location and object rotation
+        original_cursor_location = bpy.context.scene.cursor.location.copy()
+        original_rotation = obj.rotation_euler.copy()
+        
+        # Deselect all objects and ensure we're in object mode
+        bpy.ops.object.select_all(action='DESELECT')
         
         # Select and activate our object
         obj.select_set(True)
         bpy.context.view_layer.objects.active = obj
+        if obj.mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode='OBJECT')
         
-        # Remember original location and world matrix
-        orig_location = obj.location.copy()
-        orig_matrix_world = obj.matrix_world.copy()
-        
+        # Implement different centering methods
         if center_mode == 'ORIGIN':
-            # Simply set the location to world origin
+            # Simply move object to origin
             obj.location = (0, 0, 0)
         
         elif center_mode == 'GEOMETRY':
-            # For geometry center mode, check if we should recalculate
-            if self.recalculate_geometry_center:
-                # Recalculate the geometry center as before
-                if obj.mode != 'EDIT':
-                    bpy.ops.object.mode_set(mode='EDIT')
-                
-                # Get mesh data
-                mesh = obj.data
-                
-                if hasattr(mesh, "vertices"):
-                    # Calculate geometric center directly
-                    vert_sum = [0, 0, 0]
-                    vert_count = len(mesh.vertices)
-                    
-                    # Sum up all vertex positions in object's local space
-                    for v in mesh.vertices:
-                        vert_sum[0] += v.co[0]
-                        vert_sum[1] += v.co[1]
-                        vert_sum[2] += v.co[2]
-                    
-                    if vert_count > 0:
-                        # Get average position (geometric center)
-                        geo_center = [
-                            vert_sum[0] / vert_count,
-                            vert_sum[1] / vert_count,
-                            vert_sum[2] / vert_count
-                        ]
-                        
-                        # Store 3D cursor location
-                        cursor_loc = bpy.context.scene.cursor.location.copy()
-                        
-                        # Switch back to object mode
-                        bpy.ops.object.mode_set(mode='OBJECT')
-                        
-                        # Set cursor to calculated center in world space
-                        world_center = obj.matrix_world @ mathutils.Vector(geo_center)
-                        bpy.context.scene.cursor.location = world_center
-                        
-                        # Move origin to 3D cursor
-                        bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
-                        
-                        # Reset cursor
-                        bpy.context.scene.cursor.location = cursor_loc
-                        
-                        # Move object to world origin
-                        obj.location = (0, 0, 0)
-                    else:
-                        # If no vertices, just move object origin to world center
-                        bpy.ops.object.mode_set(mode='OBJECT')
-                        obj.location = (0, 0, 0)
-                else:
-                    # If not a mesh with vertices, just set location to origin
-                    bpy.ops.object.mode_set(mode='OBJECT')
-                    obj.location = (0, 0, 0)
-            else:
-                # If NOT recalculating, we need to use a different approach
-                # We want to move the object so that its *existing* origin is at world center
-                # while preserving all relative geometry
-                
-                # Make sure we're in object mode
-                if obj.mode != 'OBJECT':
-                    bpy.ops.object.mode_set(mode='OBJECT')
-                    
-                # Get the object's current world-space position (center)
-                current_origin_world = obj.matrix_world.translation.copy()
-                print(f"Moving {obj.name} from current world position {current_origin_world} to (0,0,0)")
-                
-                # Calculate the offset needed to move the origin to world center
-                offset = -current_origin_world
-                
-                # Apply the offset to move the object so its origin is at world center
-                obj.location.x += offset.x
-                obj.location.y += offset.y
-                obj.location.z += offset.z
-                
-                print(f"New location: {obj.location}")
-        
+            # Set cursor to world origin
+            bpy.context.scene.cursor.location = (0, 0, 0)
+            
+            # Set origin to geometry
+            bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY', center='BOUNDS')
+            
+            # Use the snap selection to cursor approach
+            obj.location = bpy.context.scene.cursor.location
+            
+            # Preserve original rotation
+            obj.rotation_euler = original_rotation
+            
         elif center_mode == 'MASS':
+            # Set cursor to world origin
+            bpy.context.scene.cursor.location = (0, 0, 0)
+            
             # Set origin to center of mass
             bpy.ops.object.origin_set(type='ORIGIN_CENTER_OF_MASS')
             
-            # Move to world center
-            obj.location = (0, 0, 0)
-        
-        # Restore selection without using operators
-        for scene_obj in bpy.context.view_layer.objects:
-            scene_obj.select_set(False)
+            # Use the snap selection to cursor approach
+            obj.location = bpy.context.scene.cursor.location
             
+            # Preserve original rotation
+            obj.rotation_euler = original_rotation
+        
+        # Restore cursor location
+        bpy.context.scene.cursor.location = original_cursor_location
+        
+        # Restore selection
+        bpy.ops.object.select_all(action='DESELECT')
         for o in original_selected:
             if o.name in bpy.context.view_layer.objects:
                 o.select_set(True)
-                
+        
+        # Restore active object
         if original_active and original_active.name in bpy.context.view_layer.objects:
             bpy.context.view_layer.objects.active = original_active
-    # Add sidebar panel for quick access - simplified version
-    class VIEW3D_PT_arma_reforger_tools(bpy.types.Panel):
-        """Arma Reforger Tools Sidebar Panel"""
-        bl_label = "AR Export"
-        bl_idname = "VIEW3D_PT_arma_reforger_tools"
-        bl_space_type = 'VIEW_3D'
-        bl_region_type = 'UI'
-        bl_category = 'AR Export'  # This will create a new tab in the sidebar
         
-        def draw(self, context):
-            layout = self.layout
+        
+        
+
+
+# Add sidebar panel for quick access - simplified version
+class VIEW3D_PT_arma_reforger_tools(bpy.types.Panel):
+    """Arma Reforger Tools Sidebar Panel"""
+    bl_label = "AR Export"
+    bl_idname = "VIEW3D_PT_arma_reforger_tools"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = 'AR Export'  # This will create a new tab in the sidebar
+    
+    def draw(self, context):
+        layout = self.layout
+        
+        # Export to Arma button - simplified with no options
+        row = layout.row()
+        row.scale_y = 2.0  # Make the button even bigger for easy access
+        row.operator(ExportArmaReforgerAsset.bl_idname, text="Export to Arma", icon='EXPORT')
+        
+        # Show a small info text that all options are in the export dialog
+        box = layout.box()
+        box.label(text="Options available in export dialog", icon='INFO')
+
+
+# Register and unregister functions
+classes = (
+    ExportArmaReforgerAsset,
+    VIEW3D_PT_arma_reforger_tools,
+)
+
+def menu_func_export(self, context):
+    self.layout.operator(ExportArmaReforgerAsset.bl_idname, text="Arma Reforger Asset (.fbx)")
+
+def register():
+    # Use try-except to handle any registration errors
+    try:
+        # First register properties
+        register_properties()
+        
+        # Then register classes
+        for cls in classes:
+            bpy.utils.register_class(cls)
             
-            # Export to Arma button - simplified with no options
-            row = layout.row()
-            row.scale_y = 2.0  # Make the button even bigger for easy access
-            row.operator(ExportArmaReforgerAsset.bl_idname, text="Export to Arma", icon='EXPORT')
+        # Add export menu item
+        bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
+        
+        print("Arma Reforger Asset Exporter registered successfully")
+    except Exception as e:
+        print(f"Error registering Arma Reforger Asset Exporter: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+
+def unregister():
+    # Use try-except to handle any unregistration errors
+    try:
+        # Remove export menu item
+        bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
+        
+        # Unregister classes
+        for cls in reversed(classes):
+            bpy.utils.unregister_class(cls)
             
-            # Show a small info text that all options are in the export dialog
-            box = layout.box()
-            box.label(text="Options available in export dialog", icon='INFO')
-    
-    
-    # Register and unregister functions
-    classes = (
-        ExportArmaReforgerAsset,
-        VIEW3D_PT_arma_reforger_tools,
-    )
-    
-    def menu_func_export(self, context):
-        self.layout.operator(ExportArmaReforgerAsset.bl_idname, text="Arma Reforger Asset (.fbx)")
-    
-    def register():
-        # Use try-except to handle any registration errors
-        try:
-            # First register properties
-            register_properties()
-            
-            # Then register classes
-            for cls in classes:
-                bpy.utils.register_class(cls)
-                
-            # Add export menu item
-            bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
-            
-            print("Arma Reforger Asset Exporter registered successfully")
-        except Exception as e:
-            print(f"Error registering Arma Reforger Asset Exporter: {str(e)}")
-            import traceback
-            print(traceback.format_exc())
-    
-    def unregister():
-        # Use try-except to handle any unregistration errors
-        try:
-            # Remove export menu item
-            bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
-            
-            # Unregister classes
-            for cls in reversed(classes):
-                bpy.utils.unregister_class(cls)
-                
-            # Unregister properties
-            unregister_properties()
-            
-            print("Arma Reforger Asset Exporter unregistered successfully")
-        except Exception as e:
-            print(f"Error unregistering Arma Reforger Asset Exporter: {str(e)}")
-            import traceback
-            print(traceback.format_exc())
-    
-    if __name__ == "__main__":
-        register()
-    
-    
+        # Unregister properties
+        unregister_properties()
+        
+        print("Arma Reforger Asset Exporter unregistered successfully")
+    except Exception as e:
+        print(f"Error unregistering Arma Reforger Asset Exporter: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+
+if __name__ == "__main__":
+    register()
