@@ -1,4 +1,5 @@
-Download the file
-Go to the addon installation in blender
-Click add from disk
-And fin the file
+FOR BLENDER 4.2
+
+Download the zip or individual files too.
+
+Go to addons in blender, install from disk and select each file individually 
