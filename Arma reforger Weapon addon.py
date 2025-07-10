@@ -1286,29 +1286,36 @@ class ARWEAPONS_OT_create_empties(bpy.types.Operator):
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
 
-class ARVEHICLES_OT_separate_components(bpy.types.Operator):
-    """Separate selected components and optionally add sockets for Arma Reforger"""
-    bl_idname = "arvehicles.separate_components"
-    bl_label = "Separate Vehicle Components"
+class ARWEAPONS_OT_separate_components(bpy.types.Operator):
+    """Separate selected weapon components and optionally add sockets for Arma Reforger"""
+    bl_idname = "arweapons.separate_components"
+    bl_label = "Separate Weapon Components"
     bl_options = {'REGISTER', 'UNDO'}
     
     component_type: bpy.props.EnumProperty(
         name="Component Type",
-        description="Type of component being separated",
+        description="Type of weapon component being separated",
         items=[
-            ('Sight', "Sight", "Sight component"),
-            ('light', "Light", "Emissive light component"),
-            ('Trigger', "Trigger", "Trigger or movable component"),
-            ('Bolt', "Bolt", "Bolt or movable component"),
-            ('accessory', "Accessory", "Optional accessory component"),
-            ('other', "Other", "Other component type"),
+            ('w_trigger', "Trigger", "Trigger component"),
+            ('w_fire_mode', "Fire Selector", "Fire mode selector component"),
+            ('w_charging_handle', "Charging Handle", "Charging handle component"),
+            ('w_bolt', "Bolt/Slide", "Bolt or slide component"),
+            ('w_magazine', "Magazine", "Magazine component"),
+            ('w_sight', "Sight", "Iron sight component"),
+            ('w_optic', "Optic", "Optic attachment component"),
+            ('w_muzzle', "Muzzle Device", "Muzzle brake/flash hider component"),
+            ('w_underbarrel', "Underbarrel", "Underbarrel attachment component"),
+            ('w_stock', "Stock", "Stock component"),
+            ('w_grip', "Grip", "Pistol grip component"),
+            ('w_safety', "Safety", "Safety selector component"),
+            ('w_other', "Other", "Other weapon component"),
         ],
-        default='Trigger'
+        default='w_trigger'
     )
     
     custom_name: bpy.props.StringProperty(
         name="Custom Name",
-        description="Custom name for the separated component",
+        description="Custom name for the separated component (leave blank for auto-naming)",
         default=""
     )
     
@@ -1376,20 +1383,21 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         # Transform to world space
         world_center = obj.matrix_world @ center
         
-        # Generate a name for the new object
-        prefix = ""
-        if self.component_type == 'Sight':
-            prefix = "Sight_"
-        elif self.component_type == 'light':
-            prefix = "light_"
-        elif self.component_type == 'Trigger':
-            prefix = "Trigger_"
-        elif self.component_type == 'accessory':
-            prefix = "acc_"
-        elif self.component_type == 'Bolt':
-            prefix = "Bolt_"
-                
-        new_name = self.custom_name if self.custom_name else f"{prefix}{obj.name}"
+        # Generate a name for the new object based on weapon component type
+        if self.custom_name:
+            new_name = self.custom_name
+        else:
+            # Auto-generate name based on component type
+            base_name = self.component_type
+            if base_name.startswith('w_'):
+                base_name = base_name[2:]  # Remove 'w_' prefix for cleaner naming
+            
+            # Add incrementing number if object already exists
+            counter = 1
+            new_name = base_name
+            while new_name in bpy.data.objects:
+                new_name = f"{base_name}.{counter:03d}"
+                counter += 1
         
         # Separate the selected faces
         bpy.ops.mesh.separate(type='SELECTED')
@@ -1403,6 +1411,7 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         
         # Add component type property
         new_obj["component_type"] = self.component_type
+        new_obj["weapon_part"] = "component"
         
         socket = None
         # Create a socket empty if requested
@@ -1445,7 +1454,7 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         context.view_layer.objects.active = new_obj
         
         # Build report message
-        report_msg = f"Separated component '{new_name}'"
+        report_msg = f"Separated weapon component '{new_name}'"
         if self.add_socket:
             report_msg += " with socket"
         if self.set_origin_to_socket and self.add_socket:
@@ -1471,6 +1480,9 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         if self.add_socket:
             layout.prop(self, "socket_type")
             layout.prop(self, "set_origin_to_socket")
+
+
+
 class ARWEAPONS_PT_panel(bpy.types.Panel):
     """Arma Reforger Weapons Panel"""
     bl_label = "AR Weapons"
