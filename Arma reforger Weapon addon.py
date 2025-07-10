@@ -1059,73 +1059,31 @@ class ARWEAPONS_OT_create_bone(bpy.types.Operator):
         default='w_root'
     )
     
-    # Add properties for custom bone
+    # Only custom bone name property needed
     custom_bone_name: bpy.props.StringProperty(
         name="Bone Name",
         description="Name for the custom bone",
         default="w_custom"
     )
     
-    custom_bone_head_x: bpy.props.FloatProperty(
-        name="Head X", 
-        description="X position of bone head",
-        default=0.0
-    )
-    
-    custom_bone_head_y: bpy.props.FloatProperty(
-        name="Head Y", 
-        description="Y position of bone head",
-        default=0.0
-    )
-    
-    custom_bone_head_z: bpy.props.FloatProperty(
-        name="Head Z", 
-        description="Z position of bone head",
-        default=0.0
-    )
-    
-    custom_bone_tail_x: bpy.props.FloatProperty(
-        name="Tail X", 
-        description="X position of bone tail",
-        default=0.0
-    )
-    
-    custom_bone_tail_y: bpy.props.FloatProperty(
-        name="Tail Y", 
-        description="Y position of bone tail",
-        default=0.087
-    )
-    
-    custom_bone_tail_z: bpy.props.FloatProperty(
-        name="Tail Z", 
-        description="Z position of bone tail",
-        default=0.0
-    )
+    def invoke(self, context, event):
+        # For custom bones, always show the dialog
+        if self.bone_type == 'custom':
+            return context.window_manager.invoke_props_dialog(self, width=300)
+        else:
+            # For predefined bones, execute directly
+            return self.execute(context)
     
     def draw(self, context):
         layout = self.layout
-        layout.prop(self, "bone_type")
         
-        # Show custom bone properties only when custom bone type is selected
+        # Only show bone type if it's custom (since predefined bones execute directly)
         if self.bone_type == 'custom':
+            layout.prop(self, "bone_type")
+            
             box = layout.box()
             box.label(text="Custom Bone Properties:")
             box.prop(self, "custom_bone_name")
-            
-            # Create two columns for head and tail coordinates
-            split = box.split(factor=0.5)
-            col1 = split.column()
-            col2 = split.column()
-            
-            col1.label(text="Head Position:")
-            col1.prop(self, "custom_bone_head_x")
-            col1.prop(self, "custom_bone_head_y")
-            col1.prop(self, "custom_bone_head_z")
-            
-            col2.label(text="Tail Position:")
-            col2.prop(self, "custom_bone_tail_x")
-            col2.prop(self, "custom_bone_tail_y")
-            col2.prop(self, "custom_bone_tail_z")
     
     def execute(self, context):
         # Find or create the armature
@@ -1225,8 +1183,10 @@ class ARWEAPONS_OT_create_bone(bpy.types.Operator):
             
         elif self.bone_type == 'custom':
             bone = armature.data.edit_bones.new(bone_name)  # Use the potentially auto-incremented name
-            bone.head = (self.custom_bone_head_x, self.custom_bone_head_y, self.custom_bone_head_z)
-            bone.tail = (self.custom_bone_tail_x, self.custom_bone_tail_y, self.custom_bone_tail_z)
+            # For custom bones, use standard positioning with default length
+            bone.head = (0, 0, 0)
+            bone.tail = (0, bone_length, 0)
+            bone.roll = 0.0
             if parent_bone:
                 bone.parent = parent_bone
         
@@ -1235,6 +1195,7 @@ class ARWEAPONS_OT_create_bone(bpy.types.Operator):
         
         self.report({'INFO'}, f"Created {bone_name} bone")
         return {'FINISHED'}
+
 class ARWEAPONS_OT_parent_to_armature(bpy.types.Operator):
     """Parent selected meshes to the armature"""
     bl_idname = "arweapons.parent_to_armature"
@@ -1406,8 +1367,9 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
             ('light', "Light", "Emissive light component"),
             ('Trigger', "Trigger", "Trigger or movable component"),
             ('Bolt', "Bolt", "Bolt or movable component"),
+            ('Charging_handle', "Charging Handle", "Charging handle bone"),
             ('accessory', "Accessory", "Optional accessory component"),
-            ('other', "Other", "Other component type"),
+            ('Custom', "Other", "Other component type"),
         ],
         default='Trigger'
     )
@@ -1428,13 +1390,15 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         name="Socket Type",
         description="Type of socket for this component",
         items=[
-            ('w_bolt', "Bolt", "Bolt socket"),
-            ('w_trigger', "Trigger", "Trigger socket"),
-            ('w_fire_mode', "Fire Mode", "Fire mode selector socket"),
-            ('snap_hand_left', "Left Hand", "Left hand position"),
-            ('snap_hand_right', "Right Hand", "Right hand position"),
+            ('Socket_bolt', "Bolt", "Bolt socket"),
+            ('Socket_charging_handle', "Charging Handle", "Charging handle bone"),
+            ('Socket_trigger', "Trigger", "Trigger socket"),
+            ('Socket_fire_mode', "Fire Mode", "Fire mode selector socket"),
+            ('Socket_snap_hand_left', "Left Hand", "Left hand position"),
+            ('Socket_snap_hand_right', "Right Hand", "Right hand position"),
+            ('custom', "Custom", "Custom bone name"),
         ],
-        default='w_bolt'
+        default='custom'
     )
     
     custom_socket_name: bpy.props.StringProperty(
@@ -1447,6 +1411,31 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         name="Set Origin to Socket",
         description="Set the object's origin to the same location as the socket",
         default=True
+    )
+    
+    add_bone: bpy.props.BoolProperty(
+        name="Add Bone",
+        description="Add a bone at the component's location",
+        default=False
+    )
+    
+    bone_type: bpy.props.EnumProperty(
+        name="Bone Type",
+        description="Type of bone to create",
+        items=[
+            ('w_bolt', "Bolt", "Bolt bone"),
+            ('w_trigger', "Trigger", "Trigger bone"),
+            ('w_fire_mode', "Fire Mode", "Fire mode selector bone"),
+            ('w_charging_handle', "Charging Handle", "Charging handle bone"),
+            ('custom', "Custom", "Custom bone name"),
+        ],
+        default='custom'
+    )
+    
+    custom_bone_name: bpy.props.StringProperty(
+        name="Custom Bone Name",
+        description="Custom name for the bone (leave empty for auto-generated name)",
+        default=""
     )
     
     def execute(self, context):
@@ -1512,6 +1501,8 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         new_obj["component_type"] = self.component_type
         
         socket = None
+        bone = None
+        
         # Create a socket empty if requested
         if self.add_socket:
             # Use custom socket name if provided, otherwise generate one
@@ -1533,6 +1524,61 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
             socket["socket_type"] = self.socket_type
             socket["attached_part"] = new_obj.name
             socket["weapon_part"] = "attachment_point"
+        
+        # Create a bone if requested
+        if self.add_bone:
+            # Find or create the armature
+            armature = None
+            for armature_obj in bpy.data.objects:
+                if armature_obj.type == 'ARMATURE':
+                    armature = armature_obj
+                    break
+            
+            if not armature:
+                # Create armature if it doesn't exist
+                armature_data = bpy.data.armatures.new("Armature")
+                armature = bpy.data.objects.new("Armature", armature_data)
+                context.collection.objects.link(armature)
+                
+                # Create w_root bone first
+                context.view_layer.objects.active = armature
+                bpy.ops.object.mode_set(mode='EDIT')
+                root_bone = armature.data.edit_bones.new('w_root')
+                root_bone.head = (0, 0, 0)
+                root_bone.tail = (0, 0.087, 0)
+                root_bone.roll = 0.0
+                bpy.ops.object.mode_set(mode='OBJECT')
+            
+            # Generate bone name
+            if self.bone_type == 'custom' and self.custom_bone_name:
+                bone_name = self.custom_bone_name
+            elif self.bone_type == 'custom':
+                bone_name = f"w_{new_name.lower().replace(' ', '_')}"
+            else:
+                bone_name = f"{self.bone_type}_{len([o for o in bpy.data.objects if self.bone_type in str(o)]) + 1}"
+            
+            # Make armature active and enter edit mode
+            context.view_layer.objects.active = armature
+            bpy.ops.object.mode_set(mode='EDIT')
+            
+            # Check if bone already exists and auto-increment if needed
+            original_bone_name = bone_name
+            counter = 1
+            while bone_name in armature.data.edit_bones:
+                bone_name = f"{original_bone_name}.{counter:03d}"
+                counter += 1
+            
+            # Create the bone
+            bone = armature.data.edit_bones.new(bone_name)
+            bone.head = (world_center.x, world_center.y, world_center.z)
+            bone.tail = (world_center.x, world_center.y + 0.087, world_center.z)  # Standard bone length
+            
+            # Parent to w_root if it exists
+            if 'w_root' in armature.data.edit_bones:
+                bone.parent = armature.data.edit_bones['w_root']
+            
+            # Exit edit mode
+            bpy.ops.object.mode_set(mode='OBJECT')
         
         # Set origin to socket position if requested
         if self.add_socket and self.set_origin_to_socket:
@@ -1560,6 +1606,8 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         report_msg = f"Separated component '{new_name}'"
         if self.add_socket:
             report_msg += f" with socket '{socket.name}'"
+        if self.add_bone:
+            report_msg += f" with bone '{bone_name}'"
         if self.set_origin_to_socket and self.add_socket:
             report_msg += ", origin set to socket"
             
@@ -1583,8 +1631,17 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         if self.add_socket:
             layout.prop(self, "socket_type")
             layout.prop(self, "custom_socket_name")
-            layout.prop(self, "set_origin_to_socket")           
-            
+            layout.prop(self, "set_origin_to_socket")
+        
+        # Bone options
+        layout.prop(self, "add_bone")
+        
+        # Only show bone options if add_bone is checked
+        if self.add_bone:
+            layout.prop(self, "bone_type")
+            if self.bone_type == 'custom':
+                layout.prop(self, "custom_bone_name")
+
 class ARWEAPONS_PT_panel(bpy.types.Panel):
     """Arma Reforger Weapons Panel"""
     bl_label = "AR Weapons"
