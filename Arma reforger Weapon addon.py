@@ -1421,25 +1421,26 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
     add_socket: bpy.props.BoolProperty(
         name="Add Socket",
         description="Add a socket empty at the component's location",
-        default=True
+        default=False
     )
     
     socket_type: bpy.props.EnumProperty(
         name="Socket Type",
         description="Type of socket for this component",
         items=[
-            ('barrel_chamber', "Barrel Chamber", "Barrel chamber attachment point"),
-            ('barrel_muzzle', "Barrel Muzzle", "Barrel muzzle attachment point"),
-            ('eye', "Eye", "Eye/sight alignment point"),
-            ('slot_barrel_muzzle', "Slot Barrel Muzzle", "Barrel muzzle slot attachment"),
-            ('slot_bayonet', "Slot Bayonet", "Bayonet attachment slot"),
-            ('slot_dovetail', "Slot Dovetail", "Dovetail attachment slot"),
-            ('slot_magazine', "Slot Magazine", "Magazine attachment slot"),
-            ('slot_underbarrel', "Slot Underbarrel", "Underbarrel attachment slot"),
-            ('snap_hand_left', "Snap Hand Left", "Left hand position"),
-            ('snap_hand_right', "Snap Hand Right", "Right hand position")
+            ('w_bolt', "Bolt", "Bolt socket"),
+            ('w_trigger', "Trigger", "Trigger socket"),
+            ('w_fire_mode', "Fire Mode", "Fire mode selector socket"),
+            ('snap_hand_left', "Left Hand", "Left hand position"),
+            ('snap_hand_right', "Right Hand", "Right hand position"),
         ],
-        default='slot_dovetail'
+        default='w_bolt'
+    )
+    
+    custom_socket_name: bpy.props.StringProperty(
+        name="Custom Socket Name",
+        description="Custom name for the socket (leave empty for auto-generated name)",
+        default=""
     )
     
     set_origin_to_socket: bpy.props.BoolProperty(
@@ -1513,7 +1514,12 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         socket = None
         # Create a socket empty if requested
         if self.add_socket:
-            socket_name = f"{SOCKET_NAMES[self.socket_type]}_{len([o for o in bpy.data.objects if SOCKET_NAMES[self.socket_type] in o.name]) + 1}"
+            # Use custom socket name if provided, otherwise generate one
+            if self.custom_socket_name:
+                socket_name = self.custom_socket_name
+            else:
+                # Generate socket name based on socket type
+                socket_name = f"{self.socket_type}_{len([o for o in bpy.data.objects if self.socket_type in o.name]) + 1}"
             
             socket = bpy.data.objects.new(socket_name, None)
             socket.empty_display_type = 'PLAIN_AXES'
@@ -1553,7 +1559,7 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         # Build report message
         report_msg = f"Separated component '{new_name}'"
         if self.add_socket:
-            report_msg += " with socket"
+            report_msg += f" with socket '{socket.name}'"
         if self.set_origin_to_socket and self.add_socket:
             report_msg += ", origin set to socket"
             
@@ -1576,7 +1582,9 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         # Only show socket type if add_socket is checked
         if self.add_socket:
             layout.prop(self, "socket_type")
-            layout.prop(self, "set_origin_to_socket")
+            layout.prop(self, "custom_socket_name")
+            layout.prop(self, "set_origin_to_socket")           
+            
 class ARWEAPONS_PT_panel(bpy.types.Panel):
     """Arma Reforger Weapons Panel"""
     bl_label = "AR Weapons"
