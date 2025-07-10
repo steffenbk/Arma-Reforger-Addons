@@ -177,7 +177,7 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
     align_to_axis: BoolProperty(
         name="Align to Axis",
         description="Align objects to specified axis",
-        default=True,
+        default=False,
     )
     
     # Axis alignment options
@@ -223,7 +223,7 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
     center_to_origin: BoolProperty(
         name="Center to Origin",
         description="Center geometry to world origin before export",
-        default=True,
+        default=False,
     )
     
     center_mode: EnumProperty(
