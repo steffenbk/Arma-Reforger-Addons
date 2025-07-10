@@ -1644,24 +1644,33 @@ class ARVEHICLES_OT_create_empties(bpy.types.Operator):
 
 
 
-class ARVEHICLES_OT_separate_components(bpy.types.Operator):
-    """Separate selected components into individual objects for Arma Reforger"""
-    bl_idname = "arvehicles.separate_components"
+class ARVEHICLES_OT_separate_vehicle_components(bpy.types.Operator):
+    """Separate selected components and optionally add sockets and bones for Arma Reforger"""
+    bl_idname = "arvehicles.separate_vehicle_components"
     bl_label = "Separate Vehicle Components"
     bl_options = {'REGISTER', 'UNDO'}
     
     component_type: bpy.props.EnumProperty(
         name="Component Type",
-        description="Type of component being separated",
+        description="Type of vehicle component being separated",
         items=[
-            ('window', "Window", "Window component"),
-            ('light', "Light", "Emissive light component"),
-            ('door', "Door", "Door or movable component"),
-            ('Wheel', "Wheel", "Wheel or movable component"),
-            ('accessory', "Accessory", "Optional accessory component"),
-            ('other', "Other", "Other component type"),
+            ('window', "Window", "Vehicle window component"),
+            ('door', "Door", "Vehicle door component"),
+            ('hood', "Hood", "Vehicle hood/bonnet component"),
+            ('trunk', "Trunk", "Vehicle trunk/boot component"),
+            ('wheel', "Wheel", "Vehicle wheel component"),
+            ('bumper', "Bumper", "Vehicle bumper component"),
+            ('light', "Light", "Vehicle light component (headlight, taillight, etc.)"),
+            ('mirror', "Mirror", "Vehicle mirror component"),
+            ('antenna', "Antenna", "Vehicle antenna component"),
+            ('turret', "Turret", "Vehicle turret component (military)"),
+            ('gun', "Gun", "Vehicle mounted gun component"),
+            ('hatch', "Hatch", "Vehicle hatch component"),
+            ('panel', "Panel", "Vehicle body panel component"),
+            ('accessory', "Accessory", "Vehicle accessory component"),
+            ('other', "Other", "Other vehicle component type"),
         ],
-        default='window'
+        default='door'
     )
     
     custom_name: bpy.props.StringProperty(
@@ -1676,10 +1685,69 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         default=True
     )
     
+    socket_type: bpy.props.EnumProperty(
+        name="Socket Type",
+        description="Type of socket for this vehicle component",
+        items=[
+            ('window', "Window", "Vehicle window socket"),
+            ('door', "Door", "Vehicle door socket"),
+            ('hood', "Hood", "Vehicle hood socket"),
+            ('trunk', "Trunk", "Vehicle trunk socket"),
+            ('wheel', "Wheel", "Vehicle wheel socket"),
+            ('bumper', "Bumper", "Vehicle bumper socket"),
+            ('light', "Light", "Vehicle light socket"),
+            ('mirror', "Mirror", "Vehicle mirror socket"),
+            ('antenna', "Antenna", "Vehicle antenna socket"),
+            ('turret', "Turret", "Vehicle turret socket"),
+            ('gun', "Gun", "Vehicle gun socket"),
+            ('hatch', "Hatch", "Vehicle hatch socket"),
+            ('panel', "Panel", "Vehicle panel socket"),
+            ('accessory', "Accessory", "Vehicle accessory socket"),
+            ('custom', "Custom", "Custom socket name"),
+        ],
+        default='door'
+    )
+    
+    custom_socket_name: bpy.props.StringProperty(
+        name="Custom Socket Name",
+        description="Custom name for the socket (leave empty for auto-generated name)",
+        default=""
+    )
+    
     set_origin_to_socket: bpy.props.BoolProperty(
         name="Set Origin to Socket",
         description="Set the object's origin to the same location as the socket",
         default=True
+    )
+    
+    add_bone: bpy.props.BoolProperty(
+        name="Add Bone",
+        description="Add a bone at the component's location",
+        default=False
+    )
+    
+    bone_type: bpy.props.EnumProperty(
+        name="Bone Type",
+        description="Type of bone to create for this vehicle component",
+        items=[
+            ('v_door', "Door", "Vehicle door bone"),
+            ('v_hood', "Hood", "Vehicle hood bone"),
+            ('v_trunk', "Trunk", "Vehicle trunk bone"),
+            ('v_wheel', "Wheel", "Vehicle wheel bone"),
+            ('v_turret_base', "Turret Base", "Vehicle turret base bone"),
+            ('v_turret_gun', "Turret Gun", "Vehicle turret gun bone"),
+            ('v_hatch', "Hatch", "Vehicle hatch bone"),
+            ('v_antenna', "Antenna", "Vehicle antenna bone"),
+            ('v_steeringwheel', "Steering Wheel", "Vehicle steering wheel bone"),
+            ('custom', "Custom", "Custom bone name"),
+        ],
+        default='custom'
+    )
+    
+    custom_bone_name: bpy.props.StringProperty(
+        name="Custom Bone Name",
+        description="Custom name for the bone (leave empty for auto-generated name)",
+        default=""
     )
     
     def execute(self, context):
@@ -1724,11 +1792,29 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
             prefix = "light_"
         elif self.component_type == 'door':
             prefix = "door_"
+        elif self.component_type == 'hood':
+            prefix = "hood_"
+        elif self.component_type == 'trunk':
+            prefix = "trunk_"
+        elif self.component_type == 'wheel':
+            prefix = "wheel_"
+        elif self.component_type == 'bumper':
+            prefix = "bumper_"
+        elif self.component_type == 'mirror':
+            prefix = "mirror_"
+        elif self.component_type == 'antenna':
+            prefix = "antenna_"
+        elif self.component_type == 'turret':
+            prefix = "turret_"
+        elif self.component_type == 'gun':
+            prefix = "gun_"
+        elif self.component_type == 'hatch':
+            prefix = "hatch_"
+        elif self.component_type == 'panel':
+            prefix = "panel_"
         elif self.component_type == 'accessory':
             prefix = "acc_"
-        elif self.component_type == 'Wheel':
-            prefix = "Wheel_"        
-            
+                
         new_name = self.custom_name if self.custom_name else f"{prefix}{obj.name}"
         
         # Separate the selected faces
@@ -1744,29 +1830,93 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         # Add component type property
         new_obj["component_type"] = self.component_type
         
-        # Create a socket empty if requested
         socket = None
+        bone = None
+        
+        # Create a socket empty if requested
         if self.add_socket:
-            socket_name = f"VEHICLE_{self.component_type.upper()}_SOCKET_{len([o for o in bpy.data.objects if f'VEHICLE_{self.component_type.upper()}_SOCKET' in o.name]) + 1}"
+            # Use custom socket name if provided, otherwise generate one
+            if self.custom_socket_name:
+                socket_name = self.custom_socket_name
+            else:
+                # Generate socket name based on socket type
+                socket_name = f"VEHICLE_{self.socket_type.upper()}_SOCKET_{len([o for o in bpy.data.objects if f'VEHICLE_{self.socket_type.upper()}_SOCKET' in o.name]) + 1}"
             
             socket = bpy.data.objects.new(socket_name, None)
             socket.empty_display_type = 'ARROWS'
-            socket.empty_display_size = 0.1
+            socket.empty_display_size = 0.1  # Appropriate size for vehicle parts
             socket.location = world_center
             
             # Add the socket to the current collection
             context.collection.objects.link(socket)
             
             # Add socket properties
-            socket["socket_type"] = self.component_type
+            socket["socket_type"] = self.socket_type
             socket["attached_part"] = new_obj.name
             socket["vehicle_part"] = "attachment_point"
         
+        # Create a bone if requested
+        if self.add_bone:
+            # Find or create the vehicle armature
+            armature = None
+            for armature_obj in bpy.data.objects:
+                if armature_obj.type == 'ARMATURE' and "VehicleArmature" in armature_obj.name:
+                    armature = armature_obj
+                    break
+            
+            if not armature:
+                # Create armature if it doesn't exist
+                armature_data = bpy.data.armatures.new("VehicleArmature")
+                armature = bpy.data.objects.new("VehicleArmature", armature_data)
+                context.collection.objects.link(armature)
+                
+                # Create v_root bone first
+                context.view_layer.objects.active = armature
+                bpy.ops.object.mode_set(mode='EDIT')
+                root_bone = armature.data.edit_bones.new('v_root')
+                root_bone.head = (0, 0, 0)
+                root_bone.tail = (0, 0.2, 0)  # Points along Y axis
+                root_bone.roll = 0.0
+                bpy.ops.object.mode_set(mode='OBJECT')
+            
+            # Generate bone name
+            if self.bone_type == 'custom' and self.custom_bone_name:
+                bone_name = self.custom_bone_name
+                # Add v_ prefix if not present
+                if not bone_name.startswith('v_'):
+                    bone_name = 'v_' + bone_name
+            elif self.bone_type == 'custom':
+                bone_name = f"v_{new_name.lower().replace(' ', '_')}"
+            else:
+                # For predefined types, auto-increment
+                bone_name = f"{self.bone_type}_{len([b for b in armature.data.bones if self.bone_type in b.name]) + 1}"
+            
+            # Make armature active and enter edit mode
+            context.view_layer.objects.active = armature
+            bpy.ops.object.mode_set(mode='EDIT')
+            
+            # Check if bone already exists and auto-increment if needed
+            original_bone_name = bone_name
+            counter = 1
+            while bone_name in armature.data.edit_bones:
+                bone_name = f"{original_bone_name}_{counter:02d}"
+                counter += 1
+            
+            # Create the bone
+            bone = armature.data.edit_bones.new(bone_name)
+            bone.head = (world_center.x, world_center.y, world_center.z)
+            bone.tail = (world_center.x, world_center.y + 0.2, world_center.z)  # Standard bone length
+            bone.roll = 0.0
+            
+            # Parent to v_root if it exists
+            if 'v_root' in armature.data.edit_bones:
+                bone.parent = armature.data.edit_bones['v_root']
+            
+            # Exit edit mode
+            bpy.ops.object.mode_set(mode='OBJECT')
+        
         # Set origin to socket position if requested
         if self.add_socket and self.set_origin_to_socket:
-            # Store the object's world matrix before changing origin
-            original_world_matrix = new_obj.matrix_world.copy()
-            
             # Select only the new object and make it active
             bpy.ops.object.select_all(action='DESELECT')
             new_obj.select_set(True)
@@ -1790,7 +1940,9 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         # Build report message
         report_msg = f"Separated component '{new_name}'"
         if self.add_socket:
-            report_msg += " with socket"
+            report_msg += f" with socket '{socket.name}'"
+        if self.add_bone:
+            report_msg += f" with bone '{bone_name}'"
         if self.set_origin_to_socket and self.add_socket:
             report_msg += ", origin set to socket"
             
@@ -1810,9 +1962,20 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         # Socket options
         layout.prop(self, "add_socket")
         
-        # Only show set_origin_to_socket option if add_socket is enabled
+        # Only show socket options if add_socket is checked
         if self.add_socket:
+            layout.prop(self, "socket_type")
+            layout.prop(self, "custom_socket_name")
             layout.prop(self, "set_origin_to_socket")
+        
+        # Bone options
+        layout.prop(self, "add_bone")
+        
+        # Only show bone options if add_bone is checked
+        if self.add_bone:
+            layout.prop(self, "bone_type")
+            if self.bone_type == 'custom':
+                layout.prop(self, "custom_bone_name")
 
 class ARVEHICLES_OT_parent_to_armature(bpy.types.Operator):
     """Parent selected meshes to the vehicle armature"""
@@ -1903,63 +2066,57 @@ class ARVEHICLES_PT_panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         
-        # Orientation and Scaling section
+        # Preparation section
         box = layout.box()
-        box.label(text="Preparation", icon='AUTO')
-        box.operator("arvehicles.orient_vehicle", icon='ORIENTATION_VIEW')
-        box.operator("arvehicles.scale_vehicle", icon='FULLSCREEN_ENTER')
+        box.label(text="Preparation", icon='ORIENTATION_VIEW')
         
-        # Component Separation
+        # Orient and Scale operators
+        row = box.row(align=True)
+        row.operator("arvehicles.orient_vehicle", text="Center", icon='PIVOT_BOUNDBOX')
+        row.operator("arvehicles.scale_vehicle", text="Scale", icon='FULLSCREEN_ENTER')
+        
+        # Component Separation section - FIXED REFERENCE
         box = layout.box()
         box.label(text="Component Separation", icon='MOD_BUILD')
-        row = box.row(align=True)
-        row.operator("arvehicles.separate_components", text="Separate Selection", icon='UNLINKED')
+        box.operator("arvehicles.separate_vehicle_components", text="Separate Component", icon='UNLINKED')
         
         # Collision boxes section
         box = layout.box()
         box.label(text="Collision", icon='MESH_CUBE')
+        box.operator("arvehicles.create_ucx_collision")
+        box.operator("arvehicles.create_firegeo_collision")
+        box.operator("arvehicles.create_wheel_collisions")
+        box.operator("arvehicles.create_center_of_mass")
         
-        # UCX Collision
-        col = box.column(align=True)
-        col.operator("arvehicles.create_ucx_collision", icon='CUBE')
+        # Attachment Points section
+        box = layout.box()
+        box.label(text="Attachment Points", icon='EMPTY_DATA')
+        box.operator("arvehicles.create_empties")
+        row = box.row(align=True)
+        row.operator("arvehicles.create_socket", text="Create Socket", icon='EMPTY_ARROWS')
         
-        # FireGeo Collision
-        col = box.column(align=True)
-        col.operator("arvehicles.create_firegeo_collision", icon='MESH_GRID')
-        
-        # Wheel Collisions
-        col = box.column(align=True)
-        col.operator("arvehicles.create_wheel_collisions", icon='MESH_CYLINDER')
-        
-        # Center of Mass
-        col = box.column(align=True)
-        col.operator("arvehicles.create_center_of_mass", icon='SPHERE')
-        
-        # Layer Presets
-        col = box.column(align=True)
-        col.operator("arvehicles.setup_layer_presets", icon='PRESET')
-        
-
         # Rigging section
         box = layout.box()
         box.label(text="Rigging", icon='ARMATURE_DATA')
-        box.operator("arvehicles.create_armature", icon='BONE_DATA')
-        box.operator("arvehicles.parent_to_armature", icon='ARMATURE_DATA')
-        box.operator("arvehicles.create_custom_bone", icon='BONE_DATA')
         
-
-        # In your ARVEHICLES_PT_panel draw method, in the "Attachment Points" section:
-        box = layout.box()
-        box.label(text="Attachment Points", icon='EMPTY_DATA')
-        box.operator("arvehicles.create_empties", icon='EMPTY_AXIS')
-        # Add this line:
-        box.operator("arvehicles.create_socket", icon='EMPTY_ARROWS')
+        # Armature creation
+        col = box.column(align=True)
+        col.label(text="Create Armature:")
+        col.operator("arvehicles.create_armature", text="Create Vehicle Armature")
+        
+        # Custom bone creation
+        col.separator()
+        col.label(text="Add Bones:")
+        col.operator("arvehicles.create_custom_bone", text="Add Custom Bone")
+        
+        # Parenting
+        col.separator()
+        col.operator("arvehicles.parent_to_armature")
         
         # Export section
         box = layout.box()
         box.label(text="Export", icon='EXPORT')
-        box.operator("arvehicles.setup_export", icon='FILEBROWSER')
-        
+        box.operator("arvehicles.setup_export", icon='FILEBROWSER')     
 
 class ARVEHICLES_OT_create_custom_bone(bpy.types.Operator):
     """Add a custom bone to the vehicle armature"""
@@ -2095,9 +2252,9 @@ classes = (
     ARVEHICLES_OT_create_center_of_mass,
     ARVEHICLES_OT_create_vehicle_armature,
     ARVEHICLES_OT_create_empties,
-    ARVEHICLES_OT_separate_components,
+    ARVEHICLES_OT_separate_vehicle_components,  # <-- Updated name here
     ARVEHICLES_OT_parent_to_armature,
-    ARVEHICLES_OT_create_custom_bone,  # Added the custom bone operator
+    ARVEHICLES_OT_create_custom_bone,
     ARVEHICLES_OT_setup_export,
     ARVEHICLES_PT_panel,
     ARVEHICLES_OT_create_vehicle_socket,
