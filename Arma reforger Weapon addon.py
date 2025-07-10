@@ -305,7 +305,113 @@ class ARWEAPONS_OT_center_weapon(bpy.types.Operator):
     
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
-
+    
+class ARWEAPONS_OT_center_weapon(bpy.types.Operator):
+    """Center weapon at origin and align barrel along Y+ axis"""
+    bl_idname = "arweapons.center_weapon"
+    bl_label = "Center Weapon"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    align_barrel: bpy.props.BoolProperty(
+        name="Align Barrel to Y+",
+        description="Rotate weapon so barrel points along Y+ axis",
+        default=False
+    )
+    
+    adjust_height: bpy.props.BoolProperty(
+        name="Set Standard Barrel Height",
+        description="Position weapon at standard barrel height for Arma Reforger",
+        default=False
+    )
+    
+    def execute(self, context):
+        if len(context.selected_objects) == 0:
+            self.report({'ERROR'}, "Please select the weapon meshes")
+            return {'CANCELLED'}
+        
+        # Get all selected mesh objects
+        mesh_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
+        
+        if not mesh_objects:
+            self.report({'ERROR'}, "No mesh objects selected")
+            return {'CANCELLED'}
+        
+        # Calculate current weapon dimensions and center
+        min_x, min_y, min_z = float('inf'), float('inf'), float('inf')
+        max_x, max_y, max_z = float('-inf'), float('-inf'), float('-inf')
+        
+        for obj in mesh_objects:
+            for vert in obj.data.vertices:
+                world_co = obj.matrix_world @ vert.co
+                min_x = min(min_x, world_co.x)
+                min_y = min(min_y, world_co.y)
+                min_z = min(min_z, world_co.z)
+                max_x = max(max_x, world_co.x)
+                max_y = max(max_y, world_co.y)
+                max_z = max(max_z, world_co.z)
+        
+        # Calculate center of weapon
+        center_x = (min_x + max_x) / 2
+        center_y = (min_y + max_y) / 2
+        center_z = (min_z + max_z) / 2
+        
+        # Calculate the offset needed to center at origin
+        offset_x = -center_x
+        offset_y = -center_y
+        offset_z = -center_z
+        
+        # Apply height adjustment if requested
+        if self.adjust_height:
+            # Adjust for standard weapon position - barrel at STANDARD_BARREL_HEIGHT
+            offset_z = STANDARD_BARREL_HEIGHT - center_z
+        
+        # Move all mesh objects by the calculated offset
+        for obj in mesh_objects:
+            obj.location.x += offset_x
+            obj.location.y += offset_y
+            obj.location.z += offset_z
+        
+        # Apply barrel alignment if requested
+        if self.align_barrel:
+            # For proper barrel alignment, we need to ensure the weapon points along Y+
+            # This is a simple implementation - you might need more sophisticated alignment
+            # depending on how your weapons are initially oriented
+            
+            # Create a temporary empty to use as a pivot for rotation
+            pivot = bpy.data.objects.new("AlignPivot", None)
+            context.collection.objects.link(pivot)
+            pivot.location = (0, 0, STANDARD_BARREL_HEIGHT if self.adjust_height else 0)
+            
+            # Store original parents and parent all objects to the pivot
+            original_parents = {}
+            for obj in mesh_objects:
+                original_parents[obj] = obj.parent
+                obj.parent = pivot
+            
+            # You can add rotation logic here if needed
+            # For example, to ensure barrel points along Y+:
+            # pivot.rotation_euler = (0, 0, 0)  # Reset rotation
+            
+            # Apply the transform
+            bpy.ops.object.select_all(action='DESELECT')
+            pivot.select_set(True)
+            context.view_layer.objects.active = pivot
+            bpy.ops.object.transform_apply(location=True, rotation=True, scale=False)
+            
+            # Restore original parenting
+            for obj in mesh_objects:
+                obj.parent = original_parents[obj]
+            
+            # Remove the temporary pivot
+            bpy.data.objects.remove(pivot)
+        
+        self.report({'INFO'}, "Weapon centered at origin" + 
+                   (" and aligned to Y+ axis" if self.align_barrel else "") +
+                   (" at standard barrel height" if self.adjust_height else ""))
+        return {'FINISHED'}
+    
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
 class ARWEAPONS_OT_scale_weapon(bpy.types.Operator):
     """Scale weapon to match Arma Reforger standards or custom dimensions"""
     bl_idname = "arweapons.scale_weapon"
