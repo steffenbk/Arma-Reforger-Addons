@@ -35,30 +35,30 @@ EMPTY_LOCATIONS = {
     "eye": (0, 0.1, 0.085),
 }
 SOCKET_NAMES = {
-    "barrel_chamber": "BARREL_CHAMBER_SOCKET",
-    "barrel_muzzle": "BARREL_MUZZLE_SOCKET", 
-    "eye": "EYE_SOCKET",
-    "slot_barrel_muzzle": "SLOT_BARREL_MUZZLE_SOCKET",
-    "slot_bayonet": "SLOT_BAYONET_SOCKET",
-    "slot_dovetail": "SLOT_DOVETAIL_SOCKET",
-    "slot_magazine": "SLOT_MAGAZINE_SOCKET",
-    "slot_underbarrel": "SLOT_UNDERBARREL_SOCKET",
-    "snap_hand_left": "SNAP_HAND_LEFT_SOCKET",
-    "snap_hand_right": "SNAP_HAND_RIGHT_SOCKET"
+    "slot_barrel_chamber": "slot_barrel_chamber_socket",
+    "slot_barrel_muzzle": "slot_barrel_muzzle_socket", 
+    "slot_eye": "slot_eye_socket",
+    "slot_barrel_muzzle": "slot_barrel_muzzle_socket",
+    "slot_bayonet": "slot_bayonet_socket",
+    "slot_dovetail": "slot_dovetail_socket",
+    "slot_magazine": "slot_magazine_socket",
+    "slot_underbarrel": "slot_underbarrel_socket",
+    "slot_hand_left": "slot_hand_left_socket",
+    "slot_hand_right": "slot_hand_right_socket"
 }
 
 # Socket types for weapons
 SOCKET_TYPES = [
-    ('barrel_chamber', "Barrel Chamber", "Barrel chamber attachment point"),
-    ('barrel_muzzle', "Barrel Muzzle", "Barrel muzzle attachment point"),
-    ('eye', "Eye", "Eye/sight alignment point"),
+    ('slot_barrel_chamber', "Slot Barrel Chamber", "Barrel chamber attachment point"),
+    ('slot_barrel_muzzle', "Slot Barrel Muzzle", "Barrel muzzle attachment point"),
+    ('slot_eye', "Slot Eye", "Eye/sight alignment point"),
     ('slot_barrel_muzzle', "Slot Barrel Muzzle", "Barrel muzzle slot attachment"),
     ('slot_bayonet', "Slot Bayonet", "Bayonet attachment slot"),
     ('slot_dovetail', "Slot Dovetail", "Dovetail attachment slot"),
     ('slot_magazine', "Slot Magazine", "Magazine attachment slot"),
     ('slot_underbarrel', "Slot Underbarrel", "Underbarrel attachment slot"),
-    ('snap_hand_left', "Snap Hand Left", "Left hand position"),
-    ('snap_hand_right', "Snap Hand Right", "Right hand position")
+    ('slot_hand_left', "Slot Hand Left", "Left hand position"),
+    ('slot_hand_right', "Slot Hand Right", "Right hand position")
 ]
 
 
@@ -73,7 +73,7 @@ class CREATE_SOCKET_OT_create_socket(bpy.types.Operator):
         name="Socket Type",
         description="Type of weapon socket to create",
         items=SOCKET_TYPES,
-        default='barrel_muzzle'  # Changed default to a weapon socket
+        default='slot_barrel_muzzle'  # Changed from 'barrel_muzzle'
     )
     
     custom_name: bpy.props.StringProperty(
