@@ -1542,6 +1542,146 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
             if self.bone_type == 'custom':
                 layout.prop(self, "custom_bone_name")
 
+class ARWEAPONS_OT_setup_skinning(bpy.types.Operator):
+    """Setup skinning for weapon mesh objects"""
+    bl_idname = "arweapons.setup_skinning"
+    bl_label = "Setup Weapon Skinning"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    def execute(self, context):
+        # Find the armature
+        armature = None
+        for obj in bpy.data.objects:
+            if obj.type == 'ARMATURE':
+                armature = obj
+                break
+        
+        if not armature:
+            self.report({'ERROR'}, "No armature found. Please create bones first.")
+            return {'CANCELLED'}
+        
+        # Get selected mesh objects
+        mesh_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
+        
+        if not mesh_objects:
+            self.report({'ERROR'}, "No mesh objects selected")
+            return {'CANCELLED'}
+        
+        skinned_objects = 0
+        
+        for obj in mesh_objects:
+            # Check if armature modifier already exists
+            armature_mod = None
+            for mod in obj.modifiers:
+                if mod.type == 'ARMATURE':
+                    armature_mod = mod
+                    break
+            
+            # Add armature modifier if it doesn't exist
+            if not armature_mod:
+                armature_mod = obj.modifiers.new(name="Armature", type='ARMATURE')
+                armature_mod.object = armature
+            
+            # Ensure w_root vertex group exists (all faces must be skinned)
+            if "w_root" not in obj.vertex_groups:
+                w_root_group = obj.vertex_groups.new(name="w_root")
+                
+                # Enter edit mode and select all vertices
+                bpy.context.view_layer.objects.active = obj
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.select_all(action='SELECT')
+                
+                # Assign all vertices to w_root with full weight
+                obj.vertex_groups.active = w_root_group
+                bpy.ops.object.vertex_group_assign()
+                
+                bpy.ops.object.mode_set(mode='OBJECT')
+            
+            skinned_objects += 1
+        
+        self.report({'INFO'}, f"Setup skinning for {skinned_objects} objects")
+        return {'FINISHED'}
+
+
+class ARWEAPONS_OT_create_vertex_group(bpy.types.Operator):
+    """Create vertex group for selected faces and assign to bone"""
+    bl_idname = "arweapons.create_vertex_group"
+    bl_label = "Assign Selection to Bone"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    bone_name: bpy.props.EnumProperty(
+        name="Bone Name",
+        description="Name of the bone to create vertex group for",
+        items=[
+            ('w_root', "w_root", "Root bone - static parts"),
+            ('w_trigger', "w_trigger", "Trigger bone"),
+            ('w_bolt', "w_bolt", "Bolt/slide bone"),
+            ('w_fire_mode', "w_fire_mode", "Fire selector bone"),
+            ('w_charging_handle', "w_charging_handle", "Charging handle bone"),
+            ('custom', "Custom", "Enter custom bone name"),
+        ],
+        default='w_trigger'
+    )
+    
+    custom_bone_name: bpy.props.StringProperty(
+        name="Custom Bone Name",
+        description="Custom bone name (if 'Custom' is selected)",
+        default="w_custom"
+    )
+    
+    def execute(self, context):
+        obj = context.active_object
+        
+        if not obj or obj.type != 'MESH':
+            self.report({'ERROR'}, "Active object must be a mesh")
+            return {'CANCELLED'}
+        
+        if bpy.context.mode != 'EDIT_MESH':
+            self.report({'ERROR'}, "Must be in Edit mode with faces selected")
+            return {'CANCELLED'}
+        
+        # Determine actual bone name
+        actual_bone_name = self.bone_name if self.bone_name != 'custom' else self.custom_bone_name
+        
+        # Verify the bone exists in the armature
+        armature = None
+        for armature_obj in bpy.data.objects:
+            if armature_obj.type == 'ARMATURE':
+                armature = armature_obj
+                break
+        
+        if armature and actual_bone_name not in armature.data.bones:
+            self.report({'ERROR'}, f"Bone '{actual_bone_name}' not found in armature")
+            return {'CANCELLED'}
+        
+        # Create or get vertex group
+        if actual_bone_name in obj.vertex_groups:
+            vgroup = obj.vertex_groups[actual_bone_name]
+        else:
+            vgroup = obj.vertex_groups.new(name=actual_bone_name)
+        
+        # Remove selected faces from w_root group first (to avoid double-weighting)
+        if "w_root" in obj.vertex_groups and actual_bone_name != "w_root":
+            w_root_group = obj.vertex_groups["w_root"]
+            obj.vertex_groups.active = w_root_group
+            bpy.ops.object.vertex_group_remove_from()
+        
+        # Assign selected faces to the bone's vertex group
+        obj.vertex_groups.active = vgroup
+        bpy.ops.object.vertex_group_assign()
+        
+        self.report({'INFO'}, f"Assigned selection to {actual_bone_name} vertex group")
+        return {'FINISHED'}
+    
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+    
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "bone_name")
+        if self.bone_name == 'custom':
+            layout.prop(self, "custom_bone_name")
+
 class ARWEAPONS_PT_panel(bpy.types.Panel):
     """Arma Reforger Weapons Panel"""
     bl_label = "AR Weapons"
@@ -1603,9 +1743,15 @@ class ARWEAPONS_PT_panel(bpy.types.Panel):
         row.operator("arweapons.create_bone", text="Custom").bone_type = 'custom'
         
         
-        # Parenting
+        # Skinning
         col.separator()
-        col.operator("arweapons.parent_to_armature")
+        col.label(text="Skinning:")
+        col.operator("arweapons.setup_skinning", text="Setup Skinning")
+        col.operator("arweapons.create_vertex_group", text="Assign to Bone")
+        
+        # Parenting (kept for non-mesh objects)
+        col.separator()
+        col.operator("arweapons.parent_to_armature", text="Parent (Legacy)")
         
 
 
@@ -1618,7 +1764,10 @@ classes = (
     ARWEAPONS_OT_create_bone,
     ARWEAPONS_OT_parent_to_armature,
     ARWEAPONS_OT_create_empties,
-    ARWEAPONS_PT_panel,ARVEHICLES_OT_separate_components,
+    ARWEAPONS_OT_setup_skinning,  # NEW
+    ARWEAPONS_OT_create_vertex_group,  # NEW
+    ARWEAPONS_PT_panel,
+    ARVEHICLES_OT_separate_components,
     CREATE_SOCKET_OT_create_socket,
 )
 
