@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Arma Reforger Weapon Tools",
     "author": "Your Name",
-    "version": (1, 3),
+    "version": (1, 4),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > AR Weapons",
     "description": "Tools for scaling and rigging weapons for Arma Reforger - Official Documentation Compliant",
@@ -312,9 +312,10 @@ class ARWEAPONS_OT_scale_weapon(bpy.types.Operator):
         description="How to determine the scaling factor",
         items=[
             ('standard', "Arma Standard", "Scale to standard Arma Reforger weapon dimensions"),
+            ('testing', "3m Testing Scale", "Scale to 3 meters for easy testing and adjustment"),
             ('custom', "Custom Dimensions", "Scale to custom real-world weapon dimensions"),
         ],
-        default='standard'
+        default='testing'
     )
     
     # Custom real-world dimensions (in meters)
@@ -391,28 +392,36 @@ class ARWEAPONS_OT_scale_weapon(bpy.types.Operator):
         current_height = max_z - min_z
         current_width = max_x - min_x
         
+        # Calculate the overall size (largest dimension)
+        current_max_dimension = max(current_length, current_height, current_width)
+        
         # Determine target dimensions
         if self.scale_method == 'standard':
             target_length = STANDARD_WEAPON_LENGTH
             target_height = STANDARD_WEAPON_HEIGHT
             target_width = STANDARD_WEAPON_WIDTH
-        else:
+        elif self.scale_method == 'testing':
+            # For testing: uniform scale to 3 meters based on longest dimension
+            target_scale = 3.0 / current_max_dimension if current_max_dimension > 0 else 1.0
+            scale_x = scale_y = scale_z = target_scale
+        else:  # custom
             target_length = self.custom_length
             target_height = self.custom_height
             target_width = self.custom_width
         
-        # Calculate scaling factors
-        length_scale = target_length / current_length if current_length > 0 else 1.0
-        height_scale = target_height / current_height if current_height > 0 else 1.0
-        width_scale = target_width / current_width if current_width > 0 else 1.0
-        
-        if self.preserve_proportions:
-            scale_factor = min(length_scale, height_scale, width_scale)
-            scale_x = scale_y = scale_z = scale_factor
-        else:
-            scale_x = width_scale
-            scale_y = length_scale
-            scale_z = height_scale
+        # Calculate scaling factors (only for standard and custom methods)
+        if self.scale_method != 'testing':
+            length_scale = target_length / current_length if current_length > 0 else 1.0
+            height_scale = target_height / current_height if current_height > 0 else 1.0
+            width_scale = target_width / current_width if current_width > 0 else 1.0
+            
+            if self.preserve_proportions:
+                scale_factor = min(length_scale, height_scale, width_scale)
+                scale_x = scale_y = scale_z = scale_factor
+            else:
+                scale_x = width_scale
+                scale_y = length_scale
+                scale_z = height_scale
         
         # Create scaling pivot
         pivot = bpy.data.objects.new("ScalePivot", None)
@@ -426,10 +435,7 @@ class ARWEAPONS_OT_scale_weapon(bpy.types.Operator):
             obj.parent = pivot
         
         # Apply scaling
-        if self.preserve_proportions:
-            pivot.scale = (scale_factor, scale_factor, scale_factor)
-        else:
-            pivot.scale = (scale_x, scale_y, scale_z)
+        pivot.scale = (scale_x, scale_y, scale_z)
         
         bpy.ops.object.select_all(action='DESELECT')
         pivot.select_set(True)
@@ -449,21 +455,26 @@ class ARWEAPONS_OT_scale_weapon(bpy.types.Operator):
         bpy.data.objects.remove(pivot)
         
         # Report results
-        if self.preserve_proportions:
-            final_length = current_length * scale_factor
-            final_height = current_height * scale_factor
-            final_width = current_width * scale_factor
+        if self.scale_method == 'testing':
+            final_length = current_length * scale_x
+            final_height = current_height * scale_x
+            final_width = current_width * scale_x
+            method_msg = f"3m testing scale (uniform scale of {scale_x:.4f})"
+        elif self.preserve_proportions or self.scale_method == 'standard':
+            final_length = current_length * scale_x
+            final_height = current_height * scale_x
+            final_width = current_width * scale_x
+            method_msg = "standard Arma dimensions" if self.scale_method == 'standard' else "custom dimensions"
+            method_msg += f" using uniform scale of {scale_x:.4f}"
         else:
             final_length = current_length * scale_y
             final_height = current_height * scale_z
             final_width = current_width * scale_x
+            method_msg = f"custom dimensions using non-uniform scale of X:{scale_x:.4f}, Y:{scale_y:.4f}, Z:{scale_z:.4f}"
         
-        method_msg = "standard Arma dimensions" if self.scale_method == 'standard' else "custom dimensions"
-        scale_msg = f"uniform scale of {scale_factor:.4f}" if self.preserve_proportions else \
-                   f"non-uniform scale of X:{scale_x:.4f}, Y:{scale_y:.4f}, Z:{scale_z:.4f}"
         center_msg = " and centered at origin" if self.center_after_scale else ""
         
-        self.report({'INFO'}, f"Weapon scaled to {method_msg} using {scale_msg}{center_msg}. " + 
+        self.report({'INFO'}, f"Weapon scaled to {method_msg}{center_msg}. " + 
                              f"Final dimensions: {final_length:.3f}m × {final_width:.3f}m × {final_height:.3f}m")
         
         return {'FINISHED'}
@@ -483,14 +494,80 @@ class ARWEAPONS_OT_scale_weapon(bpy.types.Operator):
             row.label(text=f"Length: {STANDARD_WEAPON_LENGTH:.3f}m")
             row.label(text=f"Height: {STANDARD_WEAPON_HEIGHT:.3f}m")
             box.label(text=f"Width: {STANDARD_WEAPON_WIDTH:.3f}m")
-        else:
+        elif self.scale_method == 'testing':
+            box = layout.box()
+            box.label(text="3 Meter Testing Scale:")
+            box.label(text="• Uniform scale based on longest dimension")
+            box.label(text="• Easy to test and adjust in-game")
+            box.label(text="• Good starting point for fine-tuning")
+        else:  # custom
             layout.label(text="Custom Real-World Dimensions:")
             layout.prop(self, "custom_length")
             layout.prop(self, "custom_width")
             layout.prop(self, "custom_height")
         
-        layout.prop(self, "preserve_proportions")
+        # Only show preserve proportions for non-testing modes
+        if self.scale_method != 'testing':
+            layout.prop(self, "preserve_proportions")
+        
         layout.prop(self, "center_after_scale")
+class ARWEAPONS_OT_create_lods(bpy.types.Operator):
+    """Create LOD versions of selected meshes"""
+    bl_idname = "arweapons.create_lods"
+    bl_label = "Create LOD Meshes"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    lod_levels: bpy.props.IntProperty(
+        name="LOD Levels",
+        description="Number of LOD levels to create",
+        default=3,
+        min=1,
+        max=5
+    )
+    
+    reduction_factor: bpy.props.FloatProperty(
+        name="Reduction Factor",
+        description="How much to reduce each LOD level (0.5 = 50% fewer faces)",
+        default=0.5,
+        min=0.1,
+        max=0.9
+    )
+    
+    def execute(self, context):
+        if not context.selected_objects:
+            self.report({'ERROR'}, "No objects selected")
+            return {'CANCELLED'}
+        
+        mesh_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
+        
+        for obj in mesh_objects:
+            current_faces = len(obj.data.polygons)
+            
+            for lod in range(1, self.lod_levels + 1):
+                # Duplicate object
+                bpy.ops.object.select_all(action='DESELECT')
+                obj.select_set(True)
+                context.view_layer.objects.active = obj
+                bpy.ops.object.duplicate()
+                
+                lod_obj = context.selected_objects[0]
+                
+                # Rename with LOD suffix
+                base_name = obj.name.replace("_LOD0", "")
+                lod_obj.name = f"{base_name}_LOD{lod}"
+                
+                # Apply decimate modifier
+                target_faces = int(current_faces * (self.reduction_factor ** lod))
+                if target_faces > 0:
+                    decimate = lod_obj.modifiers.new(name="LOD_Decimate", type='DECIMATE')
+                    decimate.ratio = target_faces / len(lod_obj.data.polygons)
+                    bpy.ops.object.modifier_apply(modifier=decimate.name)
+        
+        self.report({'INFO'}, f"Created {self.lod_levels} LOD levels for {len(mesh_objects)} objects")
+        return {'FINISHED'}
+    
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
 
 class ARWEAPONS_OT_create_collision_box(bpy.types.Operator):
     """Create a simplified collision box matching the weapon shape"""
@@ -935,6 +1012,12 @@ class ARWEAPONS_OT_create_bone(bpy.types.Operator):
             armature_data = bpy.data.armatures.new(armature_name)
             armature = bpy.data.objects.new(armature_name, armature_data)
             context.collection.objects.link(armature)
+            
+            # Ensure armature is at origin with proper scale (per documentation)
+            armature.location = (0, 0, 0)
+            armature.scale = (1.0, 1.0, 1.0)
+            armature.rotation_euler = (0, 0, 0)
+            
         elif not armature:
             self.report({'ERROR'}, "No armature found. Please create w_root first.")
             return {'CANCELLED'}
@@ -1699,6 +1782,9 @@ class ARWEAPONS_PT_panel(bpy.types.Panel):
         row.operator("arweapons.center_weapon", text="Center", icon='PIVOT_BOUNDBOX')
         row.operator("arweapons.scale_weapon", text="Scale", icon='FULLSCREEN_ENTER')
         
+        # LOD creation
+        box.operator("arweapons.create_lods", text="Create LOD Levels", icon='MOD_DECIM')
+        
         # Component Separation section
         box = layout.box()
         box.label(text="Component Separation", icon='MOD_BUILD')
@@ -1816,6 +1902,7 @@ class ARWEAPONS_PT_panel(bpy.types.Panel):
 classes = (
     ARWEAPONS_OT_center_weapon,
     ARWEAPONS_OT_scale_weapon,
+    ARWEAPONS_OT_create_lods,
     ARWEAPONS_OT_create_collision_box,
     ARWEAPONS_OT_create_detailed_collision,
     ARWEAPONS_OT_create_bone,
