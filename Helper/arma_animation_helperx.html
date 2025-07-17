@@ -1,0 +1,1759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arma Reforger Animation Export Helper</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+            overflow-x: hidden;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            color: #333;
+            overflow-x: hidden;
+        }
+
+        .tab-container {
+            background: white;
+            border-radius: 15px;
+            margin-bottom: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+
+        .tab-header {
+            display: flex;
+            background: #f8f9fa;
+            border-bottom: 2px solid #dee2e6;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 15px 25px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #6c757d;
+            transition: all 0.3s;
+        }
+
+        .tab-btn.active {
+            background: #2a5298;
+            color: white;
+        }
+
+        .tab-content {
+            padding: 25px;
+        }
+
+        .tab-pane {
+            display: none;
+        }
+
+        .tab-pane.active {
+            display: block;
+        }
+
+        .project-name-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+            border-left: 4px solid #28a745;
+        }
+
+        .project-name-section h3 {
+            color: #2a5298;
+            margin-bottom: 10px;
+            font-size: 1.2rem;
+        }
+
+        .project-input {
+            width: 100%;
+            padding: 12px 15px;
+            font-size: 16px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            transition: border-color 0.3s;
+        }
+
+        .project-input:focus {
+            outline: none;
+            border-color: #28a745;
+        }
+
+        .search-box {
+            width: 100%;
+            padding: 15px 20px;
+            font-size: 16px;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            transition: border-color 0.3s;
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-color: #2a5298;
+        }
+
+        .filter-section {
+            margin-bottom: 20px;
+        }
+
+        .filter-section h4 {
+            color: #2a5298;
+            margin-bottom: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .filters {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+        }
+
+        .filter-btn {
+            padding: 8px 16px;
+            border: 2px solid #6f42c1;
+            background: white;
+            color: #6f42c1;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+
+        .filter-btn:hover, .filter-btn.active {
+            background: #6f42c1;
+            color: white;
+        }
+
+        .quick-access {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        .quick-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: transform 0.2s;
+        }
+
+        .quick-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .results-container {
+            margin-top: 25px;
+            position: relative;
+            z-index: 2;
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #eee;
+        }
+
+        .results-count {
+            color: #666;
+            font-weight: 500;
+        }
+
+        .clear-filters-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.3s;
+        }
+
+        .clear-filters-btn:hover {
+            background: #c82333;
+        }
+
+        .animation-card {
+            border: 1px solid #e0e0e0;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            padding: 0;
+            background: white;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            overflow: hidden;
+            transition: all 0.3s;
+            position: relative;
+            z-index: 1;
+        }
+
+        .animation-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+
+        .card-header {
+            background: linear-gradient(135deg, #2a5298 0%, #1e3c72 100%);
+            color: white;
+            padding: 20px;
+            position: relative;
+        }
+
+        .animation-name {
+            font-size: 1.4rem;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        .animation-description {
+            opacity: 0.9;
+            line-height: 1.4;
+            font-size: 0.95rem;
+        }
+
+        .dual-export-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0;
+        }
+
+        .export-section {
+            padding: 20px;
+            position: relative;
+        }
+
+        .export-section:first-child {
+            border-right: 2px solid #e9ecef;
+            background: #f8f9fa;
+        }
+
+        .export-type-header {
+            background: #6f42c1;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+            text-align: center;
+            display: inline-block;
+        }
+
+        .weapon-header {
+            background: #e74c3c;
+        }
+
+        .player-header {
+            background: #3498db;
+        }
+
+        .export-details {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .detail-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .detail-label {
+            font-weight: 600;
+            color: #495057;
+            font-size: 0.85rem;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .detail-value {
+            color: #333;
+            font-family: 'Courier New', monospace;
+            background: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid #dee2e6;
+            font-size: 0.9rem;
+            word-break: break-all;
+            position: relative;
+        }
+
+        .copy-btn {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 0.7rem;
+            transition: background 0.3s;
+        }
+
+        .copy-btn:hover {
+            background: #218838;
+        }
+
+        .multi-export-container {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .export-variant {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 0;
+        }
+
+        .export-label {
+            font-weight: 600;
+            color: #495057;
+            font-size: 0.8rem;
+            min-width: 60px;
+            text-align: right;
+        }
+
+        .export-value-multi {
+            font-family: 'Courier New', monospace;
+            background: #f1f3f4;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            flex: 1;
+            border: 1px solid #dee2e6;
+        }
+
+        .single-export-container {
+            padding: 20px;
+        }
+
+        .weapon-animation-card {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+        }
+
+        .weapon-animation-card .card-header {
+            background: transparent;
+        }
+
+        .no-results {
+            text-align: center;
+            color: #666;
+            font-size: 1.2rem;
+            padding: 40px;
+            background: white;
+            border-radius: 10px;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .project-replacement {
+            background: #d4edda !important;
+            border-color: #c3e6cb !important;
+            color: #155724 !important;
+        }
+
+        .export-profile-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .profile-card {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            transition: all 0.3s;
+        }
+
+        .profile-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+
+        .profile-name {
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            color: #2a5298;
+            margin-bottom: 8px;
+            font-size: 0.95rem;
+        }
+
+        .profile-description {
+            color: #666;
+            font-size: 0.85rem;
+            line-height: 1.4;
+        }
+
+        @media (max-width: 768px) {
+            .dual-export-container {
+                grid-template-columns: 1fr;
+            }
+            
+            .export-section:first-child {
+                border-right: none;
+                border-bottom: 2px solid #e9ecef;
+            }
+
+            .tab-header {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Arma Reforger Animation Export Helper</h1>
+            <p>Complete animation export reference for weapon and character animations</p>
+        </div>
+
+        <div class="tab-container">
+            <div class="tab-header">
+                <button class="tab-btn active" onclick="switchTab('rig-animations')">Rig Animations (Weapon + Player)</button>
+                <button class="tab-btn" onclick="switchTab('standalone-animations')">Standalone Export Profiles</button>
+            </div>
+
+            <!-- Rig Animations Tab -->
+            <div class="tab-content">
+                <div id="rig-animations" class="tab-pane active">
+                    <div class="project-name-section">
+                        <h3>Project Settings</h3>
+                        <input type="text" class="project-input" placeholder="Enter your weapon name (e.g., 'myrifle', 'ak47_custom')..." id="projectInput" value="sampleweapon">
+                        <small style="color: #666; display: block; margin-top: 8px;">
+                            This will replace "sampleweapon" in all export names with your project name
+                        </small>
+                    </div>
+
+                    <input type="text" class="search-box" placeholder="Search rig animations (e.g., 'reload', 'fire', 'bolt')..." id="searchInput">
+                    
+                    <div class="filter-section">
+                        <h4>Animation Category:</h4>
+                        <div class="filters category-filters">
+                            <button class="filter-btn active" data-filter="all">All Categories</button>
+                            <button class="filter-btn" data-filter="reload">Reload</button>
+                            <button class="filter-btn" data-filter="fire">Fire</button>
+                            <button class="filter-btn" data-filter="bolt">Bolt</button>
+                            <button class="filter-btn" data-filter="trigger">Trigger</button>
+                            <button class="filter-btn" data-filter="safety">Safety</button>
+                            <button class="filter-btn" data-filter="sight">Sight</button>
+                            <button class="filter-btn" data-filter="idle">Idle</button>
+                            <button class="filter-btn" data-filter="switch">Switch</button>
+                            <button class="filter-btn" data-filter="ik">IK</button>
+                        </div>
+                    </div>
+
+                    <div class="results-container">
+                        <div class="results-header">
+                            <div class="results-count" id="rigResultsCount">Showing all rig animations</div>
+                            <button class="clear-filters-btn" onclick="clearRigFilters()">Clear All Filters</button>
+                        </div>
+                        <div id="rigAnimationResults"></div>
+                        <div id="rigNoResults" class="no-results hidden">
+                            <p>No rig animations found matching your search criteria.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Standalone Animations Tab -->
+                <div id="standalone-animations" class="tab-pane">
+                    <input type="text" class="search-box" placeholder="Search standalone export profiles..." id="standaloneSearchInput">
+                    
+                    <div class="filter-section">
+                        <h4>Category:</h4>
+                        <div class="filters standalone-category-filters">
+                            <button class="filter-btn active" data-filter="all">All Categories</button>
+                            <button class="filter-btn" data-filter="body">Body</button>
+                            <button class="filter-btn" data-filter="ik">Inverse Kinematics</button>
+                            <button class="filter-btn" data-filter="weapon-idles">Weapon Idles</button>
+                            <button class="filter-btn" data-filter="generic-weapon">Generic Weapon</button>
+                            <button class="filter-btn" data-filter="pistols">Pistols</button>
+                            <button class="filter-btn" data-filter="rifles">Rifles</button>
+                            <button class="filter-btn" data-filter="machineguns">Machineguns</button>
+                            <button class="filter-btn" data-filter="rpgs">RPGs</button>
+                            <button class="filter-btn" data-filter="grenades">Grenades</button>
+                            <button class="filter-btn" data-filter="vehicles">Vehicles</button>
+                            <button class="filter-btn" data-filter="aircraft">Aircraft</button>
+                            <button class="filter-btn" data-filter="misc">Misc</button>
+                        </div>
+                    </div>
+
+                    <div class="results-container">
+                        <div class="results-header">
+                            <div class="results-count" id="standaloneResultsCount">Showing all export profiles</div>
+                            <button class="clear-filters-btn" onclick="clearStandaloneFilters()">Clear All Filters</button>
+                        </div>
+                        <div id="standaloneResults"></div>
+                        <div id="standaloneNoResults" class="no-results hidden">
+                            <p>No export profiles found matching your search criteria.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const rigAnimationData = [
+            {
+                name: "BoltPose",
+                category: "bolt",
+                description: "Poses of the bolt. First frame represents closed bolt, last frame represents open bolt",
+                weapon: {
+                    frames: 4,
+                    actionUsed: "w_sampleweapon_fire",
+                    exportProfile: "724_Weapon_Bolt",
+                    exportAs: "w_rfl_sampleweapon_01_bolt_pose"
+                },
+                player: {
+                    frames: 0,
+                    actionUsed: "No player animation needed",
+                    exportProfile: "",
+                    exportAs: ""
+                }
+            },
+            {
+                name: "Finger_trigger_in",
+                category: "trigger",
+                description: "Finger trigger in animation",
+                weapon: {
+                    frames: 6,
+                    actionUsed: "",
+                    exportProfile: "999_Empty",
+                    exportAs: ""
+                },
+                player: {
+                    frames: 6,
+                    actionUsed: "",
+                    exportProfile: "502_IK_RightHand",
+                    exportAs: ""
+                }
+            },
+            {
+                name: "Finger_trigger_out",
+                category: "trigger",
+                description: "Finger trigger out animation",
+                weapon: {
+                    frames: 6,
+                    actionUsed: "",
+                    exportProfile: "999_Empty",
+                    exportAs: ""
+                },
+                player: {
+                    frames: 6,
+                    actionUsed: "",
+                    exportProfile: "502_IK_RightHand",
+                    exportAs: ""
+                }
+            },
+            {
+                name: "Fire",
+                category: "fire",
+                description: "Animation of weapon being fired - trigger is pressed and bolt is doing one full cycle",
+                weapon: {
+                    frames: 3,
+                    actionUsed: "w_sampleweapon_fire",
+                    exportProfile: "724_Weapon_Bolt_Trigger",
+                    exportAs: "w_rfl_sampleweapon_01_fire"
+                },
+                player: {
+                    frames: 3,
+                    actionUsed: "",
+                    exportProfile: "401_RIndexABS",
+                    exportAs: ""
+                }
+            },
+            {
+                name: "Idle",
+                category: "idle",
+                description: "Empty animation",
+                weapon: {
+                    frames: 1,
+                    actionUsed: "",
+                    exportProfile: "999_Empty",
+                    exportAs: ""
+                },
+                player: {
+                    frames: 1,
+                    actionUsed: "using same animation as Safety",
+                    exportProfile: "",
+                    exportAs: ""
+                }
+            },
+            {
+                name: "Idle_finger",
+                category: "idle",
+                description: "Empty animation",
+                weapon: {
+                    frames: 1,
+                    actionUsed: "",
+                    exportProfile: "999_Empty",
+                    exportAs: ""
+                },
+                player: {
+                    frames: 1,
+                    actionUsed: "",
+                    exportProfile: "502_IK_RightHand",
+                    exportAs: ""
+                }
+            },
+            {
+                name: "IKOffset",
+                category: "ik",
+                description: "IK offset animation",
+                weapon: {
+                    frames: 0,
+                    actionUsed: "No animation assigned",
+                    exportProfile: "",
+                    exportAs: ""
+                },
+                player: {
+                    frames: 1,
+                    actionUsed: "p_sampleweapon_ik",
+                    exportProfile: "101_FullBodyABS",
+                    exportAs: "p_rfl_sampleweapon_01_offset"
+                }
+            },
+            {
+                name: "Reload_InsertMag",
+                category: "reload",
+                description: "Animation of inserting magazine into the weapon. 722_Weapon_MagRelease profile can be used if there is animated weapon magazine release on the weapon",
+                weapon: {
+                    frames: 72,
+                    actionUsed: "rfl_sampleweapon_erc_insert_mag",
+                    exportProfile: "999_Empty",
+                    exportAs: "w_rfl_sampleweapon_01_mag_insert"
+                },
+                player: {
+                    frames: 72,
+                    actionUsed: "rfl_sampleweapon_erc_insert_mag, rfl_sampleweapon_pne_insert_mag",
+                    exportProfile: "252_UpperbodyADD_ArmsABS",
+                    exportAs: "p_rfl_sampleweapon_01_erc_mag_insert, p_rfl_sampleweapon_01_pne_mag_insert"
+                }
+            },
+            {
+                name: "Reload_RemoveMag",
+                category: "reload",
+                description: "Animation of removing magazine from the weapon. 722_Weapon_MagRelease profile can be used if there is animated weapon magazine release on the weapon",
+                weapon: {
+                    frames: 59,
+                    actionUsed: "rfl_sampleweapon_erc_remove_mag",
+                    exportProfile: "999_Empty",
+                    exportAs: "w_rfl_sampleweapon_01_mag_remove"
+                },
+                player: {
+                    frames: 59,
+                    actionUsed: "rfl_sampleweapon_erc_remove_mag, rfl_sampleweapon_pne_remove_mag",
+                    exportProfile: "252_UpperbodyADD_ArmsABS",
+                    exportAs: "p_rfl_sampleweapon_01_erc_mag_remove, p_rfl_sampleweapon_01_pne_mag_remove"
+                }
+            },
+            {
+                name: "ReloadActionBolt",
+                category: "bolt",
+                description: "Animation of racking the bolt",
+                weapon: {
+                    frames: 36,
+                    actionUsed: "rfl_sampleweapon_erc_bolt_rack",
+                    exportProfile: "999_Empty",
+                    exportAs: "w_rfl_sampleweapon_01_bolt_rack"
+                },
+                player: {
+                    frames: 36,
+                    actionUsed: "rfl_sampleweapon_erc_bolt_rack, rfl_sampleweapon_pne_bolt_rack",
+                    exportProfile: "252_UpperbodyADD_ArmsABS",
+                    exportAs: "p_rfl_sampleweapon_01_erc_bolt_rack, p_rfl_sampleweapon_01_pne_bolt_rack"
+                }
+            },
+            {
+                name: "Safety",
+                category: "safety",
+                description: "Safety mode animation. First frame safety mode, second single mode and third one is used for full auto",
+                weapon: {
+                    frames: 3,
+                    actionUsed: "w_sampleweapon_safety",
+                    exportProfile: "701_Rifle_Idle",
+                    exportAs: "w_rfl_sampleweapon_01_safety"
+                },
+                player: {
+                    frames: 3,
+                    actionUsed: "p_sampleweapon_ik",
+                    exportProfile: "502_IK_RightHand",
+                    exportAs: "p_rfl_sampleweapon_01_safety"
+                }
+            },
+            {
+                name: "Sight",
+                category: "sight",
+                description: "Iron sight adjustment animation. Amount of frames is equal to amount of zeroing modes defined in the weapon",
+                weapon: {
+                    frames: 11,
+                    actionUsed: "",
+                    exportProfile: "723_Weapon_Sight",
+                    exportAs: ""
+                },
+                player: {
+                    frames: 11,
+                    actionUsed: "empty anim, need same length as Sight in weapon",
+                    exportProfile: "999_Empty",
+                    exportAs: ""
+                }
+            },
+            {
+                name: "Switch_Mode_Off",
+                category: "switch",
+                description: "Empty animation for switching safety switch off. This animation need to have same amount of frames as the one in player instance",
+                weapon: {
+                    frames: 16,
+                    actionUsed: "",
+                    exportProfile: "999_Empty",
+                    exportAs: ""
+                },
+                player: {
+                    frames: 16,
+                    actionUsed: "it is possible to use same anim as Switch_Mode_On",
+                    exportProfile: "262_ArmsADD_RHandABS",
+                    exportAs: ""
+                }
+            },
+            {
+                name: "Switch_Mode_On",
+                category: "switch",
+                description: "Empty animation for switching safety switch on. This animation need to have same amount of frames as the one in player instance",
+                weapon: {
+                    frames: 16,
+                    actionUsed: "",
+                    exportProfile: "999_Empty",
+                    exportAs: ""
+                },
+                player: {
+                    frames: 16,
+                    actionUsed: "p_rfl_sampleweapon_01_modes_on",
+                    exportProfile: "262_ArmsADD_RHandABS",
+                    exportAs: "p_rfl_sampleweapon_01_modes_on"
+                }
+            },
+            {
+                name: "Trigger",
+                category: "trigger",
+                description: "Animation of trigger when its pressed / Animation of finger when trigger is pressed",
+                weapon: {
+                    frames: 4,
+                    actionUsed: "w_sampleweapon_fire",
+                    exportProfile: "721_Weapon_Trigger",
+                    exportAs: "w_rfl_sampleweapon_01_trigger"
+                },
+                player: {
+                    frames: 4,
+                    actionUsed: "using same animation as Fire",
+                    exportProfile: "",
+                    exportAs: ""
+                }
+            },
+            {
+                name: "Animation IK Pose",
+                category: "ik",
+                description: "Inverted Kinematics pose defined inside SCR_WeaponAttachmentsStorageComponent in Item Animation Attributes sections under name Animation IK Pose",
+                weapon: {
+                    frames: 0,
+                    actionUsed: "No weapon animation needed",
+                    exportProfile: "",
+                    exportAs: ""
+                },
+                player: {
+                    frames: 1,
+                    actionUsed: "p_sampleweapon_ik",
+                    exportProfile: "501_IK",
+                    exportAs: "p_rfl_sampleweapon_01_ik"
+                }
+            }
+        ];
+
+        const standaloneExportData = [
+            // Body - Complete list
+            { name: "000_Multi_FullBodyABS_RHandNone_LHandNone", category: "body", description: "Multi full body absolute, no hands" },
+            { name: "002_Multi_FullBodyABS_RHandNone_LHandABS", category: "body", description: "Multi full body absolute, left hand absolute" },
+            { name: "101_FullBodyABS", category: "body", description: "Full body absolute animation" },
+            { name: "102_FullBodyABS_camera", category: "body", description: "Full body absolute with camera" },
+            { name: "110_FullBodyABS_RHandNone_LHandNone", category: "body", description: "Full body absolute, no hands" },
+            { name: "120_FullBodyABS_RHandNone_LHandABS", category: "body", description: "Full body absolute, left hand absolute" },
+            { name: "121_UpperBodyABS_RightArmABS", category: "body", description: "Upper body absolute, right arm absolute" },
+            { name: "122_UpperBodyABS_LeftArmABS", category: "body", description: "Upper body absolute, left arm absolute" },
+            { name: "123_Head_ABS", category: "body", description: "Head absolute" },
+            { name: "123_Head_ADD", category: "body", description: "Head additive" },
+            { name: "123_LHandABS", category: "body", description: "Left hand absolute" },
+            { name: "124_FullBodyABS_RHandABS_LHandNone", category: "body", description: "Full body absolute, right hand absolute" },
+            { name: "126_UpperBodyABS_RHandNone_LHandABS", category: "body", description: "Upper body absolute, left hand absolute" },
+            { name: "150_FullBodyADD", category: "body", description: "Full body additive" },
+            { name: "150_FullBodyADD_camera", category: "body", description: "Full body additive with camera" },
+            { name: "151_FullBodyADD_RHandNone_LHandNone", category: "body", description: "Full body additive, no hands" },
+            { name: "152_FullBodyADD_RHandNone_LHandNone_HipsADD", category: "body", description: "Full body additive, no hands, hips additive" },
+            { name: "250_UpperBodyADD", category: "body", description: "Upper body additive" },
+            { name: "251bis_UpperBodyADD_RHandNone_LHandABS", category: "body", description: "Upper body additive, left hand absolute" },
+            { name: "251_UpperBodyADD_RHandNone_LHandNone", category: "body", description: "Upper body additive, no hands" },
+            { name: "252_UpperbodyADD_ArmsABS", category: "body", description: "Reloads - Upper body additive with arms absolute" },
+            { name: "253_UpperbodyADD_ArmsABS_RPropNone", category: "body", description: "Upper body additive, arms absolute, no right prop" },
+            { name: "254_UpperbodyADD_ArmsABS_RHandNone", category: "body", description: "Upper body additive, arms absolute, no right hand" },
+            { name: "255_RArmABS_RHandNone", category: "body", description: "Right arm absolute, no right hand" },
+            { name: "256_UpperbodyADD_LArmABS", category: "body", description: "Upper body additive, left arm absolute" },
+            { name: "257_UpperbodyADD_LArmADD_LHandABS", category: "body", description: "Upper body additive, left arm additive, left hand absolute" },
+            { name: "258_UpperbodyADD_ArmsABS_HandsNone", category: "body", description: "Upper body additive, arms absolute, no hands" },
+            { name: "259Bis_UpperbodyADD_LArmABS_LHandNone_LPropABS", category: "body", description: "Upper body additive, left arm absolute, no left hand, left prop absolute" },
+            { name: "259_UpperbodyADD_LArmABS_LHandNone", category: "body", description: "Upper body additive, left arm absolute, no left hand" },
+            { name: "260_LArmADD_LHandNone", category: "body", description: "Left arm additive, no left hand" },
+            { name: "262_ArmsADD_RHandABS", category: "body", description: "Arms additive, right hand absolute" },
+            { name: "301_LowerbodyABS", category: "body", description: "Lower body absolute" },
+            { name: "401_RIndexABS", category: "body", description: "Right index finger absolute" },
+
+            // Inverse Kinematics
+            { name: "501_IK", category: "ik", description: "Inverse Kinematics" },
+            { name: "502_IK_RightHand", category: "ik", description: "IK Right Hand" },
+            { name: "503_IK_LeftHand", category: "ik", description: "IK Left Hand" },
+            { name: "504_IK_RightElbow_Hand", category: "ik", description: "IK Right Elbow and Hand" },
+
+            // Weapon Idles
+            { name: "700_Pistol_Idle", category: "weapon-idles", description: "Pistol idle animation" },
+            { name: "701_Rifle_Idle", category: "weapon-idles", description: "Rifle idle animation" },
+            { name: "702_Machinegun_Idle", category: "weapon-idles", description: "Machinegun idle animation" },
+            { name: "703_RPG_Idle", category: "weapon-idles", description: "RPG idle animation" },
+            { name: "704_Grenade_Idle", category: "weapon-idles", description: "Grenade idle animation" },
+            { name: "705_PKM_magazine", category: "weapon-idles", description: "PKM magazine animation" },
+            { name: "706_M60_magazine", category: "weapon-idles", description: "M60 magazine animation" },
+            { name: "707_Rifle_Idle_SVD", category: "weapon-idles", description: "SVD rifle idle animation" },
+            { name: "708_M249_magazine", category: "weapon-idles", description: "M249 magazine animation" },
+            { name: "709_Machinegun_Idle_M249", category: "weapon-idles", description: "M249 machinegun idle animation" },
+            { name: "710_Grenade_RGB2_Idle", category: "weapon-idles", description: "RGB2 grenade idle animation" },
+            { name: "711_Rifle_stock", category: "weapon-idles", description: "Rifle stock animation" },
+
+            // Generic Weapon Profiles
+            { name: "720_Weapon_FireMode", category: "generic-weapon", description: "Weapon fire mode" },
+            { name: "721_Weapon_Trigger", category: "generic-weapon", description: "Weapon trigger" },
+            { name: "722_Weapon_MagRelease", category: "generic-weapon", description: "Weapon magazine release" },
+            { name: "723_Weapon_Sight", category: "generic-weapon", description: "With sight slider: rifle, machinegun, RPG" },
+            { name: "724_Weapon_Bolt", category: "generic-weapon", description: "Weapon bolt" },
+            { name: "725_Weapon_Hammer", category: "generic-weapon", description: "Pistol, RPG hammer" },
+            { name: "726_Weapon_Bolt_trigger", category: "generic-weapon", description: "Weapon bolt and trigger" },
+            { name: "727_Weapon_Bolt_rack", category: "generic-weapon", description: "Weapon bolt rack" },
+            { name: "728bis_M203_Sight", category: "generic-weapon", description: "M203 sight" },
+            { name: "728_M16a2_Sight", category: "generic-weapon", description: "M16A2 sight" },
+            { name: "729_Weapon_Sight_M21", category: "generic-weapon", description: "M21 weapon sight" },
+
+            // Pistols
+            { name: "730_Weapon_FireMode_m9", category: "pistols", description: "M9 pistol fire mode" },
+            { name: "731_Pistol_SlideHammer", category: "pistols", description: "Pistol slide hammer" },
+            { name: "732_Pistol_SlideHammerRelease", category: "pistols", description: "Pistol slide hammer release" },
+            { name: "733_Pistol_SlideHammerReleaseTrigger", category: "pistols", description: "Pistol slide hammer release trigger" },
+            { name: "734_Pistol_safety", category: "pistols", description: "Pistol safety" },
+            { name: "735_Pistol_SlideTrigger", category: "pistols", description: "Pistol slide trigger" },
+            { name: "736_Pistol_Slide", category: "pistols", description: "Pistol slide" },
+
+            // Rifles
+            { name: "737_Weapon_Sight_M249", category: "rifles", description: "M249 weapon sight" },
+            { name: "738_Weapon_Bolt_M249", category: "rifles", description: "M249 weapon bolt" },
+            { name: "739_Weapon_Bolt_release", category: "rifles", description: "Weapon bolt release" },
+            { name: "740_Rifle_Bolt_Rack", category: "rifles", description: "Rifle bolt rack" },
+            { name: "741_Rifle_Bolt_Rack_SVD", category: "rifles", description: "SVD rifle bolt rack" },
+            { name: "742_Rifle_safety_trigger", category: "rifles", description: "Rifle safety trigger" },
+
+            // Machineguns
+            { name: "750_Machinegun_Fire", category: "machineguns", description: "Machinegun fire - includes dustcover" },
+            { name: "751_Machinegun_TopCover", category: "machineguns", description: "Machinegun top cover" },
+            { name: "752_Machinegun_bipod", category: "machineguns", description: "Machinegun bipod" },
+            { name: "753_Machinegun_bipod_M249", category: "machineguns", description: "M249 machinegun bipod" },
+
+            // RPGs
+            { name: "760_RPG_Sight", category: "rpgs", description: "RPG sight - without the sight slider" },
+            { name: "761_RPG_Sight_Front", category: "rpgs", description: "RPG front sight" },
+            { name: "762_RPG_Safety", category: "rpgs", description: "RPG safety" },
+            { name: "763_RPG_Unfold_TEMP", category: "rpgs", description: "RPG unfold (temporary)" },
+            { name: "764_RPG_M72_idle", category: "rpgs", description: "M72 RPG idle" },
+
+            // Grenades
+            { name: "770_Grenade_Pin", category: "grenades", description: "Grenade pin" },
+
+            // Vehicles
+            { name: "801_Vehicle_Door_L01", category: "vehicles", description: "Vehicle left door 01" },
+            { name: "802_Vehicle_Door_R01", category: "vehicles", description: "Vehicle right door 01" },
+            { name: "803_Vehicle_Door_L03", category: "vehicles", description: "Vehicle left door 03" },
+            { name: "804_Vehicle_Door_R03", category: "vehicles", description: "Vehicle right door 03" },
+            { name: "805_Vehicle_Door_L02", category: "vehicles", description: "Vehicle left door 02" },
+            { name: "806_Vehicle_Door_R02", category: "vehicles", description: "Vehicle right door 02" },
+            { name: "807_Vehicle_Door_L01_BTR", category: "vehicles", description: "BTR left door 01" },
+            { name: "808_Vehicle_Door_R01_BTR", category: "vehicles", description: "BTR right door 01" },
+            { name: "809_Vehicle_Door_L01_m998", category: "vehicles", description: "M998 left door 01" },
+            { name: "810_Vehicle_Door_R01_m998", category: "vehicles", description: "M998 right door 01" },
+            { name: "811_Vehicle_Door_L02_m998", category: "vehicles", description: "M998 left door 02" },
+            { name: "812_Vehicle_Door_R02_m998", category: "vehicles", description: "M998 right door 02" },
+            { name: "820_Vehicle_Steering_Wheel", category: "vehicles", description: "Vehicle steering wheel" },
+            { name: "840_Vehicle_Throttle", category: "vehicles", description: "Vehicle throttle" },
+            { name: "841_Vehicle_Clutch", category: "vehicles", description: "Vehicle clutch" },
+            { name: "842_Vehicle_Brake", category: "vehicles", description: "Vehicle brake" },
+            { name: "843_Vehicle_Starter_Switch", category: "vehicles", description: "Vehicle starter switch" },
+            { name: "844_Vehicle_Gearshift", category: "vehicles", description: "Vehicle gearshift" },
+            { name: "845_Vehicle_light_switch", category: "vehicles", description: "Vehicle light switch" },
+            { name: "846_Vehicle_Handbrake", category: "vehicles", description: "Vehicle handbrake" },
+            { name: "847_Vehicle_Starter_Switch_BTR", category: "vehicles", description: "BTR starter switch" },
+            { name: "900_Ural_Idle", category: "vehicles", description: "Ural idle" },
+            { name: "901_Uaz_Idle", category: "vehicles", description: "UAZ idle" },
+            { name: "902_BTR_Idle", category: "vehicles", description: "BTR idle" },
+            { name: "903_M151a2_Idle", category: "vehicles", description: "M151A2 idle" },
+            { name: "904_M9231A1_idle", category: "vehicles", description: "M923A1 idle" },
+            { name: "905_M998_Idle", category: "vehicles", description: "M998 idle" },
+
+            // Aircraft
+            { name: "860_Mi-8MT_Door_L", category: "aircraft", description: "Mi-8MT left door" },
+            { name: "861_Mi-8MT_CyclicControl", category: "aircraft", description: "Mi-8MT cyclic control" },
+            { name: "890_Vehicle_Empty", category: "aircraft", description: "Empty vehicle animation" },
+            { name: "950_Mi-8MT_Idle", category: "aircraft", description: "Mi-8MT idle" },
+
+            // Misc
+            { name: "601_watch_SandY184A", category: "misc", description: "Watch animation" },
+            { name: "602_flag", category: "misc", description: "Flag animation" },
+            { name: "780_M203_barrel", category: "misc", description: "M203 barrel" },
+            { name: "999_Empty", category: "misc", description: "Empty profile - no special export settings" }
+        ];
+
+        let activeTab = 'rig-animations';
+        let activeCategoryFilter = 'all';
+        let activeStandaloneCategoryFilter = 'all';
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('active'));
+            document.getElementById(tabName).classList.add('active');
+            
+            activeTab = tabName;
+            
+            if (tabName === 'rig-animations') {
+                renderRigAnimations(rigAnimationData);
+            } else if (tabName === 'standalone-animations') {
+                renderStandaloneAnimations(standaloneExportData);
+            }
+        }
+
+        function replaceProjectName(text, projectName) {
+            if (!text || !projectName || projectName === 'sampleweapon') return text;
+            return text.replace(/sampleweapon/g, projectName);
+        }
+
+        function renderRigAnimations(animations) {
+            const resultsContainer = document.getElementById('rigAnimationResults');
+            const noResults = document.getElementById('rigNoResults');
+            const resultsCount = document.getElementById('rigResultsCount');
+            const projectName = document.getElementById('projectInput')?.value?.trim() || 'sampleweapon';
+            
+            if (animations.length === 0) {
+                resultsContainer.innerHTML = '';
+                noResults.classList.remove('hidden');
+                resultsCount.textContent = 'No results found';
+                return;
+            }
+            
+            noResults.classList.add('hidden');
+            resultsCount.textContent = 'Showing ' + animations.length + ' rig animation' + (animations.length !== 1 ? 's' : '');
+            
+            // Clear container first
+            resultsContainer.innerHTML = '';
+            
+            animations.forEach(anim => {
+                const weaponActionUsed = replaceProjectName(anim.weapon.actionUsed, projectName);
+                const weaponExportAs = replaceProjectName(anim.weapon.exportAs, projectName);
+                const playerActionUsed = replaceProjectName(anim.player.actionUsed, projectName);
+                const playerExportAs = replaceProjectName(anim.player.exportAs, projectName);
+                
+                // Create elements instead of innerHTML
+                const card = document.createElement('div');
+                card.className = 'animation-card';
+                
+                const cardHeader = document.createElement('div');
+                cardHeader.className = 'card-header';
+                
+                const animName = document.createElement('div');
+                animName.className = 'animation-name';
+                animName.textContent = anim.name;
+                
+                const animDesc = document.createElement('div');
+                animDesc.className = 'animation-description';
+                animDesc.textContent = anim.description;
+                
+                cardHeader.appendChild(animName);
+                cardHeader.appendChild(animDesc);
+                
+                const dualContainer = document.createElement('div');
+                dualContainer.className = 'dual-export-container';
+                
+                // Helper function to create export value with multiple entries
+                function createExportValue(text, label) {
+                    if (!text) return '<span style="color: #999;">N/A</span>';
+                    
+                    // Check if there are multiple comma-separated values
+                    const values = text.split(',').map(v => v.trim()).filter(v => v);
+                    
+                    if (values.length === 1) {
+                        return text + '<button class="copy-btn" onclick="copyText(\'' + text.replace(/'/g, "\\'") + '\')">Copy</button>';
+                    } else {
+                        // Multiple values - create separate copy buttons
+                        let html = '<div class="multi-export-container">';
+                        values.forEach((value, index) => {
+                            const stance = value.includes('_erc_') ? 'Standing' : value.includes('_pne_') ? 'Prone' : '';
+                            const displayLabel = stance ? stance + ':' : 'Export ' + (index + 1) + ':';
+                            html += '<div class="export-variant">';
+                            html += '<span class="export-label">' + displayLabel + '</span>';
+                            html += '<span class="export-value-multi">' + value + '</span>';
+                            html += '<button class="copy-btn" onclick="copyText(\'' + value.replace(/'/g, "\\'") + '\')">Copy</button>';
+                            html += '</div>';
+                        });
+                        html += '</div>';
+                        return html;
+                    }
+                }
+                
+                // Weapon section
+                const weaponSection = document.createElement('div');
+                weaponSection.className = 'export-section';
+                
+                const weaponHeader = document.createElement('div');
+                weaponHeader.className = 'export-type-header weapon-header';
+                weaponHeader.textContent = 'Weapon Instance';
+                
+                const weaponDetails = document.createElement('div');
+                weaponDetails.className = 'export-details';
+                
+                // Create weapon detail items
+                weaponDetails.innerHTML = 
+                    '<div class="detail-item"><span class="detail-label">Frames</span><span class="detail-value">' + anim.weapon.frames + '</span></div>' +
+                    '<div class="detail-item"><span class="detail-label">Action Used</span><span class="detail-value">' + createExportValue(weaponActionUsed, 'Action') + '</span></div>' +
+                    '<div class="detail-item"><span class="detail-label">Export Profile</span><span class="detail-value">' + anim.weapon.exportProfile + (anim.weapon.exportProfile ? '<button class="copy-btn" onclick="copyText(\'' + anim.weapon.exportProfile + '\')">Copy</button>' : '') + '</span></div>' +
+                    '<div class="detail-item"><span class="detail-label">Export As</span><span class="detail-value">' + createExportValue(weaponExportAs, 'Export') + '</span></div>';
+                
+                weaponSection.appendChild(weaponHeader);
+                weaponSection.appendChild(weaponDetails);
+                
+                // Player section
+                const playerSection = document.createElement('div');
+                playerSection.className = 'export-section';
+                
+                const playerHeader = document.createElement('div');
+                playerHeader.className = 'export-type-header player-header';
+                playerHeader.textContent = 'Player Instance';
+                
+                const playerDetails = document.createElement('div');
+                playerDetails.className = 'export-details';
+                
+                // Create player detail items
+                playerDetails.innerHTML = 
+                    '<div class="detail-item"><span class="detail-label">Frames</span><span class="detail-value">' + anim.player.frames + '</span></div>' +
+                    '<div class="detail-item"><span class="detail-label">Action Used</span><span class="detail-value">' + createExportValue(playerActionUsed, 'Action') + '</span></div>' +
+                    '<div class="detail-item"><span class="detail-label">Export Profile</span><span class="detail-value">' + anim.player.exportProfile + (anim.player.exportProfile ? '<button class="copy-btn" onclick="copyText(\'' + anim.player.exportProfile + '\')">Copy</button>' : '') + '</span></div>' +
+                    '<div class="detail-item"><span class="detail-label">Export As</span><span class="detail-value">' + createExportValue(playerExportAs, 'Export') + '</span></div>';
+                
+                playerSection.appendChild(playerHeader);
+                playerSection.appendChild(playerDetails);
+                
+                dualContainer.appendChild(weaponSection);
+                dualContainer.appendChild(playerSection);
+                
+                card.appendChild(cardHeader);
+                card.appendChild(dualContainer);
+                
+                resultsContainer.appendChild(card);
+            });
+        }
+
+        function renderStandaloneAnimations(animations) {
+            const resultsContainer = document.getElementById('standaloneResults');
+            const noResults = document.getElementById('standaloneNoResults');
+            const resultsCount = document.getElementById('standaloneResultsCount');
+            
+            if (animations.length === 0) {
+                resultsContainer.innerHTML = '';
+                noResults.classList.remove('hidden');
+                resultsCount.textContent = 'No results found';
+                return;
+            }
+            
+            noResults.classList.add('hidden');
+            resultsCount.textContent = `Showing ${animations.length} export profile${animations.length !== 1 ? 's' : ''}`;
+            
+            const grouped = animations.reduce((acc, profile) => {
+                if (!acc[profile.category]) acc[profile.category] = [];
+                acc[profile.category].push(profile);
+                return acc;
+            }, {});
+
+            const categoryNames = {
+                'body': 'Body Animations',
+                'ik': 'Inverse Kinematics',
+                'weapon-idles': 'Weapon Idles',
+                'generic-weapon': 'Generic Weapon Profiles',
+                'pistols': 'Pistols',
+                'rifles': 'Rifles',
+                'machineguns': 'Machineguns',
+                'rpgs': 'RPGs',
+                'grenades': 'Grenades',
+                'vehicles': 'Vehicles',
+                'aircraft': 'Aircraft',
+                'misc': 'Miscellaneous'
+            };
+
+            resultsContainer.innerHTML = Object.keys(grouped).map(category => `
+                <div class="category-section" style="margin-bottom: 30px;">
+                    <h3 style="color: #2a5298; margin-bottom: 15px; padding-bottom: 8px; border-bottom: 2px solid #e9ecef; font-size: 1.3rem;">
+                        ${categoryNames[category] || category}
+                    </h3>
+                    <div class="export-profile-grid">
+                        ${grouped[category].map(profile => `
+                            <div class="profile-card">
+                                <div class="profile-name">${profile.name}
+                                    <button class="copy-btn" onclick="copyText('${profile.name}')">Copy</button>
+                                </div>
+                                <div class="profile-description">${profile.description}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function filterRigAnimations() {
+            const searchTerm = document.getElementById('searchInput')?.value?.toLowerCase() || '';
+            
+            let filtered = rigAnimationData;
+            
+            if (activeCategoryFilter !== 'all') {
+                filtered = filtered.filter(anim => anim.category === activeCategoryFilter);
+            }
+            
+            if (searchTerm) {
+                filtered = filtered.filter(anim =>
+                    anim.name.toLowerCase().includes(searchTerm) ||
+                    anim.description.toLowerCase().includes(searchTerm) ||
+                    anim.category.toLowerCase().includes(searchTerm)
+                );
+            }
+            
+            renderRigAnimations(filtered);
+        }
+
+        function filterStandaloneAnimations() {
+            const searchTerm = document.getElementById('standaloneSearchInput')?.value?.toLowerCase() || '';
+            
+            let filtered = standaloneExportData;
+            
+            if (activeStandaloneCategoryFilter !== 'all') {
+                filtered = filtered.filter(profile => profile.category === activeStandaloneCategoryFilter);
+            }
+            
+            if (searchTerm) {
+                filtered = filtered.filter(profile =>
+                    profile.name.toLowerCase().includes(searchTerm) ||
+                    profile.description.toLowerCase().includes(searchTerm)
+                );
+            }
+            
+            renderStandaloneAnimations(filtered);
+        }
+
+        function copyText(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                console.log('Copied:', text);
+            });
+        }
+
+        function quickSearch(term) {
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput) {
+                searchInput.value = term;
+                filterRigAnimations();
+            }
+        }
+
+        function clearRigFilters() {
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput) searchInput.value = '';
+            
+            document.querySelectorAll('.category-filters .filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            const allBtn = document.querySelector('.category-filters .filter-btn[data-filter="all"]');
+            if (allBtn) allBtn.classList.add('active');
+            activeCategoryFilter = 'all';
+            
+            filterRigAnimations();
+        }
+
+        function clearStandaloneFilters() {
+            const searchInput = document.getElementById('standaloneSearchInput');
+            if (searchInput) searchInput.value = '';
+            
+            document.querySelectorAll('.standalone-category-filters .filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            const allBtn = document.querySelector('.standalone-category-filters .filter-btn[data-filter="all"]');
+            if (allBtn) allBtn.classList.add('active');
+            activeStandaloneCategoryFilter = 'all';
+            
+            filterStandaloneAnimations();
+        }
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            renderRigAnimations(rigAnimationData);
+            
+            // Event listeners
+            const searchInput = document.getElementById('searchInput');
+            const projectInput = document.getElementById('projectInput');
+            const standaloneSearchInput = document.getElementById('standaloneSearchInput');
+            
+            if (searchInput) searchInput.addEventListener('input', filterRigAnimations);
+            if (projectInput) projectInput.addEventListener('input', filterRigAnimations);
+            if (standaloneSearchInput) standaloneSearchInput.addEventListener('input', filterStandaloneAnimations);
+
+            // Category filter buttons for rig animations
+            document.querySelectorAll('.category-filters .filter-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.category-filters .filter-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    activeCategoryFilter = btn.dataset.filter;
+                    filterRigAnimations();
+                });
+            });
+
+            // Category filter buttons for standalone animations
+            document.querySelectorAll('.standalone-category-filters .filter-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.standalone-category-filters .filter-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    activeStandaloneCategoryFilter = btn.dataset.filter;
+                    filterStandaloneAnimations();
+                });
+            });
+        });
+    </script>: "707_Rifle_Idle_SVD", category: "weapon-idles", description: "SVD rifle idle animation" },
+            { name: "708_M249_magazine", category: "weapon-idles", description: "M249 magazine animation" },
+            { name: "709_Machinegun_Idle_M249", category: "weapon-idles", description: "M249 machinegun idle animation" },
+            { name: "710_Grenade_RGB2_Idle", category: "weapon-idles", description: "RGB2 grenade idle animation" },
+            { name: "711_Rifle_stock", category: "weapon-idles", description: "Rifle stock animation" },
+
+            // Generic Weapon Profiles
+            { name: "720_Weapon_FireMode", category: "generic-weapon", description: "Weapon fire mode" },
+            { name: "721_Weapon_Trigger", category: "generic-weapon", description: "Weapon trigger" },
+            { name: "722_Weapon_MagRelease", category: "generic-weapon", description: "Weapon magazine release" },
+            { name: "723_Weapon_Sight", category: "generic-weapon", description: "With sight slider: rifle, machinegun, RPG" },
+            { name: "724_Weapon_Bolt", category: "generic-weapon", description: "Weapon bolt" },
+            { name: "725_Weapon_Hammer", category: "generic-weapon", description: "Pistol, RPG hammer" },
+            { name: "726_Weapon_Bolt_trigger", category: "generic-weapon", description: "Weapon bolt and trigger" },
+            { name: "727_Weapon_Bolt_rack", category: "generic-weapon", description: "Weapon bolt rack" },
+            { name: "728bis_M203_Sight", category: "generic-weapon", description: "M203 sight" },
+            { name: "728_M16a2_Sight", category: "generic-weapon", description: "M16A2 sight" },
+            { name: "729_Weapon_Sight_M21", category: "generic-weapon", description: "M21 weapon sight" },
+
+            // Pistols
+            { name: "730_Weapon_FireMode_m9", category: "pistols", description: "M9 pistol fire mode" },
+            { name: "731_Pistol_SlideHammer", category: "pistols", description: "Pistol slide hammer" },
+            { name: "732_Pistol_SlideHammerRelease", category: "pistols", description: "Pistol slide hammer release" },
+            { name: "733_Pistol_SlideHammerReleaseTrigger", category: "pistols", description: "Pistol slide hammer release trigger" },
+            { name: "734_Pistol_safety", category: "pistols", description: "Pistol safety" },
+            { name: "735_Pistol_SlideTrigger", category: "pistols", description: "Pistol slide trigger" },
+            { name: "736_Pistol_Slide", category: "pistols", description: "Pistol slide" },
+
+            // Generic Rifle Profiles
+            { name: "737_Weapon_Sight_M249", category: "rifles", description: "M249 weapon sight" },
+            { name: "738_Weapon_Bolt_M249", category: "rifles", description: "M249 weapon bolt" },
+            { name: "739_Weapon_Bolt_release", category: "rifles", description: "Weapon bolt release" },
+            { name: "740_Rifle_Bolt_Rack", category: "rifles", description: "Rifle bolt rack" },
+            { name: "741_Rifle_Bolt_Rack_SVD", category: "rifles", description: "SVD rifle bolt rack" },
+            { name: "742_Rifle_safety_trigger", category: "rifles", description: "Rifle safety trigger" },
+
+            // Machineguns
+            { name: "750_Machinegun_Fire", category: "machineguns", description: "Machinegun fire - includes dustcover" },
+            { name: "751_Machinegun_TopCover", category: "machineguns", description: "Machinegun top cover" },
+            { name: "752_Machinegun_bipod", category: "machineguns", description: "Machinegun bipod" },
+            { name: "753_Machinegun_bipod_M249", category: "machineguns", description: "M249 machinegun bipod" },
+
+            // RPGs
+            { name: "760_RPG_Sight", category: "rpgs", description: "RPG sight - without the sight slider" },
+            { name: "761_RPG_Sight_Front", category: "rpgs", description: "RPG front sight" },
+            { name: "762_RPG_Safety", category: "rpgs", description: "RPG safety" },
+            { name: "763_RPG_Unfold_TEMP", category: "rpgs", description: "RPG unfold (temporary)" },
+            { name: "764_RPG_M72_idle", category: "rpgs", description: "M72 RPG idle" },
+
+            // Grenades
+            { name: "770_Grenade_Pin", category: "grenades", description: "Grenade pin" },
+
+            // UGLs
+            { name: "780_M203_barrel", category: "misc", description: "M203 barrel" },
+
+            // Ground Vehicles
+            { name: "801_Vehicle_Door_L01", category: "vehicles", description: "Vehicle left door 01" },
+            { name: "802_Vehicle_Door_R01", category: "vehicles", description: "Vehicle right door 01" },
+            { name: "803_Vehicle_Door_L03", category: "vehicles", description: "Vehicle left door 03" },
+            { name: "804_Vehicle_Door_R03", category: "vehicles", description: "Vehicle right door 03" },
+            { name: "805_Vehicle_Door_L02", category: "vehicles", description: "Vehicle left door 02" },
+            { name: "806_Vehicle_Door_R02", category: "vehicles", description: "Vehicle right door 02" },
+            { name: "807_Vehicle_Door_L01_BTR", category: "vehicles", description: "BTR left door 01" },
+            { name: "808_Vehicle_Door_R01_BTR", category: "vehicles", description: "BTR right door 01" },
+            { name: "809_Vehicle_Door_L01_m998", category: "vehicles", description: "M998 left door 01" },
+            { name: "810_Vehicle_Door_R01_m998", category: "vehicles", description: "M998 right door 01" },
+            { name: "811_Vehicle_Door_L02_m998", category: "vehicles", description: "M998 left door 02" },
+            { name: "812_Vehicle_Door_R02_m998", category: "vehicles", description: "M998 right door 02" },
+            { name: "820_Vehicle_Steering_Wheel", category: "vehicles", description: "Vehicle steering wheel" },
+            { name: "840_Vehicle_Throttle", category: "vehicles", description: "Vehicle throttle" },
+            { name: "841_Vehicle_Clutch", category: "vehicles", description: "Vehicle clutch" },
+            { name: "842_Vehicle_Brake", category: "vehicles", description: "Vehicle brake" },
+            { name: "843_Vehicle_Starter_Switch", category: "vehicles", description: "Vehicle starter switch" },
+            { name: "844_Vehicle_Gearshift", category: "vehicles", description: "Vehicle gearshift" },
+            { name: "845_Vehicle_light_switch", category: "vehicles", description: "Vehicle light switch" },
+            { name: "846_Vehicle_Handbrake", category: "vehicles", description: "Vehicle handbrake" },
+            { name: "847_Vehicle_Starter_Switch_BTR", category: "vehicles", description: "BTR starter switch" },
+            { name: "900_Ural_Idle", category: "vehicles", description: "Ural idle" },
+            { name: "901_Uaz_Idle", category: "vehicles", description: "UAZ idle" },
+            { name: "902_BTR_Idle", category: "vehicles", description: "BTR idle" },
+            { name: "903_M151a2_Idle", category: "vehicles", description: "M151A2 idle" },
+            { name: "904_M9231A1_idle", category: "vehicles", description: "M923A1 idle" },
+            { name: "905_M998_Idle", category: "vehicles", description: "M998 idle" },
+
+            // Aircraft
+            { name: "860_Mi-8MT_Door_L", category: "aircraft", description: "Mi-8MT left door" },
+            { name: "861_Mi-8MT_CyclicControl", category: "aircraft", description: "Mi-8MT cyclic control" },
+            { name: "890_Vehicle_Empty", category: "aircraft", description: "Empty vehicle animation" },
+            { name: "950_Mi-8MT_Idle", category: "aircraft", description: "Mi-8MT idle" },
+
+            // Misc/Empty
+            { name: "999_Empty", category: "misc", description: "Empty profile - no special export settings" }
+        ];
+
+        let activeTab = 'rig-animations';
+        let activeCategoryFilter = 'all';
+        let activeStandaloneCategoryFilter = 'all';
+
+        function switchTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            // Update tab panes
+            document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('active'));
+            document.getElementById(tabName).classList.add('active');
+            
+            activeTab = tabName;
+            
+            // Render appropriate content
+            if (tabName === 'rig-animations') {
+                renderRigAnimations(rigAnimationData);
+            } else if (tabName === 'standalone-animations') {
+                renderStandaloneAnimations(standaloneExportData);
+            }
+        }
+
+        function replaceProjectName(text, projectName) {
+            if (!text || !projectName || projectName === 'sampleweapon') return text;
+            return text.replace(/sampleweapon/g, projectName);
+        }
+
+        function renderRigAnimations(animations) {
+            const resultsContainer = document.getElementById('rigAnimationResults');
+            const noResults = document.getElementById('rigNoResults');
+            const resultsCount = document.getElementById('rigResultsCount');
+            const projectName = document.getElementById('projectInput').value.trim() || 'sampleweapon';
+            
+            if (animations.length === 0) {
+                resultsContainer.innerHTML = '';
+                noResults.classList.remove('hidden');
+                resultsCount.textContent = 'No results found';
+                return;
+            }
+            
+            noResults.classList.add('hidden');
+            resultsCount.textContent = `Showing ${animations.length} rig animation${animations.length !== 1 ? 's' : ''}`;
+            
+            resultsContainer.innerHTML = animations.map(anim => {
+                const weaponActionUsed = replaceProjectName(anim.weapon.actionUsed, projectName);
+                const weaponExportAs = replaceProjectName(anim.weapon.exportAs, projectName);
+                const playerActionUsed = replaceProjectName(anim.player.actionUsed, projectName);
+                const playerExportAs = replaceProjectName(anim.player.exportAs, projectName);
+                
+                return `
+                <div class="animation-card">
+                    <div class="card-header">
+                        <div class="animation-name">${anim.name}</div>
+                        <div class="animation-description">${anim.description}</div>
+                    </div>
+                    
+                    <div class="dual-export-container">
+                        <div class="export-section">
+                            <div class="export-type-header weapon-header">🔫 Weapon Instance</div>
+                            <div class="export-details">
+                                ${anim.weapon.frames > 0 ? `
+                                    <div class="detail-item">
+                                        <span class="detail-label">Frames</span>
+                                        <span class="detail-value">${anim.weapon.frames}</span>
+                                    </div>
+                                    
+                                    <div class="detail-item">
+                                        <span class="detail-label">Action Used</span>
+                                        <span class="detail-value ${projectName !== 'sampleweapon' && anim.weapon.actionUsed.includes('sampleweapon') ? 'project-replacement' : ''}">${weaponActionUsed}
+                                            ${weaponActionUsed ? `<button class="copy-btn" onclick="copyToClipboard('${weaponActionUsed.replace(/'/g, "\\'")}')">Copy</button>` : ''}
+                                        </span>
+                                    </div>
+                                    
+                                    <div class="detail-item">
+                                        <span class="detail-label">Export Profile</span>
+                                        <span class="detail-value">${anim.weapon.exportProfile}
+                                            ${anim.weapon.exportProfile ? `<button class="copy-btn" onclick="copyToClipboard('${anim.weapon.exportProfile}')">Copy</button>` : ''}
+                                        </span>
+                                    </div>
+                                    
+                                    <div class="detail-item">
+                                        <span class="detail-label">Export As</span>
+                                        <span class="detail-value ${projectName !== 'sampleweapon' && anim.weapon.exportAs.includes('sampleweapon') ? 'project-replacement' : ''}">${weaponExportAs || 'N/A'}
+                                            ${weaponExportAs ? `<button class="copy-btn" onclick="copyToClipboard('${weaponExportAs.replace(/'/g, "\\'")}')">Copy</button>` : ''}
+                                        </span>
+                                    </div>
+                                ` : `
+                                    <div style="text-align: center; color: #6c757d; font-style: italic; padding: 20px;">
+                                        No weapon animation needed for this action
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+                        
+                        <div class="export-section">
+                            <div class="export-type-header player-header">👤 Player Instance</div>
+                            <div class="export-details">
+                                ${anim.player.frames > 0 ? `
+                                    <div class="detail-item">
+                                        <span class="detail-label">Frames</span>
+                                        <span class="detail-value">${anim.player.frames}</span>
+                                    </div>
+                                    
+                                    <div class="detail-item">
+                                        <span class="detail-label">Action Used</span>
+                                        <span class="detail-value ${projectName !== 'sampleweapon' && anim.player.actionUsed.includes('sampleweapon') ? 'project-replacement' : ''}">${playerActionUsed}
+                                            ${playerActionUsed ? `<button class="copy-btn" onclick="copyToClipboard('${playerActionUsed.replace(/'/g, "\\'")}')">Copy</button>` : ''}
+                                        </span>
+                                    </div>
+                                    
+                                    <div class="detail-item">
+                                        <span class="detail-label">Export Profile</span>
+                                        <span class="detail-value">${anim.player.exportProfile}
+                                            ${anim.player.exportProfile ? `<button class="copy-btn" onclick="copyToClipboard('${anim.player.exportProfile}')">Copy</button>` : ''}
+                                        </span>
+                                    </div>
+                                    
+                                    <div class="detail-item">
+                                        <span class="detail-label">Export As</span>
+                                        <span class="detail-value ${projectName !== 'sampleweapon' && anim.player.exportAs.includes('sampleweapon') ? 'project-replacement' : ''}">${playerExportAs || 'N/A'}
+                                            ${playerExportAs ? `<button class="copy-btn" onclick="copyToClipboard('${playerExportAs.replace(/'/g, "\\'")}')">Copy</button>` : ''}
+                                        </span>
+                                    </div>
+                                ` : `
+                                    <div style="text-align: center; color: #6c757d; font-style: italic; padding: 20px;">
+                                        No player animation needed for this action
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            }).join('');
+        }
+
+        function renderStandaloneAnimations(animations) {
+            const resultsContainer = document.getElementById('standaloneResults');
+            const noResults = document.getElementById('standaloneNoResults');
+            const resultsCount = document.getElementById('standaloneResultsCount');
+            
+            if (animations.length === 0) {
+                resultsContainer.innerHTML = '';
+                noResults.classList.remove('hidden');
+                resultsCount.textContent = 'No results found';
+                return;
+            }
+            
+            noResults.classList.add('hidden');
+            resultsCount.textContent = `Showing ${animations.length} export profile${animations.length !== 1 ? 's' : ''}`;
+            
+            // Group by category
+            const grouped = animations.reduce((acc, profile) => {
+                if (!acc[profile.category]) acc[profile.category] = [];
+                acc[profile.category].push(profile);
+                return acc;
+            }, {});
+
+            const categoryNames = {
+                'body': '👤 Body Animations',
+                'ik': '🤖 Inverse Kinematics',
+                'weapon-idles': '⚔️ Weapon Idles',
+                'generic-weapon': '🔧 Generic Weapon Profiles',
+                'pistols': '🔫 Pistols',
+                'rifles': '🎯 Rifles',
+                'machineguns': '💥 Machineguns',
+                'rpgs': '🚀 RPGs',
+                'grenades': '💣 Grenades',
+                'vehicles': '🚗 Vehicles',
+                'aircraft': '✈️ Aircraft',
+                'misc': '📦 Miscellaneous'
+            };
+
+            resultsContainer.innerHTML = Object.keys(grouped).map(category => `
+                <div class="category-section" style="margin-bottom: 30px;">
+                    <h3 style="color: #2a5298; margin-bottom: 15px; padding-bottom: 8px; border-bottom: 2px solid #e9ecef; font-size: 1.3rem;">
+                        ${categoryNames[category] || category}
+                    </h3>
+                    <div class="export-profile-grid">
+                        ${grouped[category].map(profile => `
+                            <div class="profile-card">
+                                <div class="profile-name">${profile.name}
+                                    <button class="copy-btn" onclick="copyToClipboard('${profile.name}')">Copy</button>
+                                </div>
+                                <div class="profile-description">${profile.description}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `).join('');
+        } ''}</div>
+                </div>
+                <div class="export-profile-grid">
+                    ${filtered.map(profile => `
+                        <div class="profile-card">
+                            <div class="profile-name">${profile.name}
+                                <button class="copy-btn" onclick="copyToClipboard('${profile.name.replace('.apr', '')}')">Copy</button>
+                            </div>
+                            <div class="profile-description">${profile.description}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function filterRigAnimations() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            
+            let filtered = rigAnimationData;
+            
+            // Apply category filter
+            if (activeCategoryFilter !== 'all') {
+                filtered = filtered.filter(anim => anim.category === activeCategoryFilter);
+            }
+            
+            // Apply search filter
+            if (searchTerm) {
+                filtered = filtered.filter(anim =>
+                    anim.name.toLowerCase().includes(searchTerm) ||
+                    anim.description.toLowerCase().includes(searchTerm) ||
+                    anim.category.toLowerCase().includes(searchTerm) ||
+                    anim.weapon.actionUsed.toLowerCase().includes(searchTerm) ||
+                    anim.player.actionUsed.toLowerCase().includes(searchTerm) ||
+                    anim.weapon.exportProfile.toLowerCase().includes(searchTerm) ||
+                    anim.player.exportProfile.toLowerCase().includes(searchTerm)
+                );
+            }
+            
+            renderRigAnimations(filtered);
+        }
+
+        function filterStandaloneAnimations() {
+            const searchTerm = document.getElementById('standaloneSearchInput').value.toLowerCase();
+            
+            let filtered = standaloneExportData;
+            
+            // Apply category filter
+            if (activeStandaloneCategoryFilter !== 'all') {
+                filtered = filtered.filter(profile => profile.category === activeStandaloneCategoryFilter);
+            }
+            
+            // Apply search filter
+            if (searchTerm) {
+                filtered = filtered.filter(profile =>
+                    profile.name.toLowerCase().includes(searchTerm) ||
+                    profile.description.toLowerCase().includes(searchTerm) ||
+                    profile.category.toLowerCase().includes(searchTerm)
+                );
+            }
+            
+            renderStandaloneAnimations(filtered);
+        }
+
+        function quickSearch(term) {
+            document.getElementById('searchInput').value = term;
+            filterRigAnimations();
+        }
+
+        function clearRigFilters() {
+            document.getElementById('searchInput').value = '';
+            
+            // Reset category filter
+            document.querySelectorAll('.category-filters .filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector('.category-filters .filter-btn[data-filter="all"]').classList.add('active');
+            activeCategoryFilter = 'all';
+            
+            filterRigAnimations();
+        }
+
+        function clearStandaloneFilters() {
+            document.getElementById('standaloneSearchInput').value = '';
+            
+            // Reset category filter
+            document.querySelectorAll('.standalone-category-filters .filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector('.standalone-category-filters .filter-btn[data-filter="all"]').classList.add('active');
+            activeStandaloneCategoryFilter = 'all';
+            
+            filterStandaloneAnimations();
+        }
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                // Visual feedback
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.textContent = 'Copied!';
+                const originalBg = btn.style.background;
+                btn.style.background = '#20c997';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.style.background = originalBg;
+                }, 1000);
+            });
+        }
+
+        // Event listeners
+        document.getElementById('searchInput').addEventListener('input', filterRigAnimations);
+        document.getElementById('projectInput').addEventListener('input', filterRigAnimations);
+        document.getElementById('standaloneSearchInput').addEventListener('input', filterStandaloneAnimations);
+
+        // Category filter buttons for rig animations
+        document.querySelectorAll('.category-filters .filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.category-filters .filter-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                activeCategoryFilter = btn.dataset.filter;
+                filterRigAnimations();
+            });
+        });
+
+        // Category filter buttons for standalone animations
+        document.querySelectorAll('.standalone-category-filters .filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.standalone-category-filters .filter-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                activeStandaloneCategoryFilter = btn.dataset.filter;
+                filterStandaloneAnimations();
+            });
+        });
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                // Visual feedback
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.textContent = 'Copied!';
+                const originalBg = btn.style.background;
+                btn.style.background = '#20c997';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.style.background = originalBg;
+                }, 1000);
+            });
+        }
+
+        function quickSearch(term) {
+            document.getElementById('searchInput').value = term;
+            filterRigAnimations();
+        }
+
+        function clearRigFilters() {
+            document.getElementById('searchInput').value = '';
+            
+            // Reset category filter
+            document.querySelectorAll('.category-filters .filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector('.category-filters .filter-btn[data-filter="all"]').classList.add('active');
+            activeCategoryFilter = 'all';
+            
+            filterRigAnimations();
+        }
+
+        // Initial render
+        renderRigAnimations(rigAnimationData);
+    </script>
+</body>
+</html>

@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arma Reforger Animation Export Profile Decision Tool</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: #fff;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .tool-tabs {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 30px;
+            gap: 10px;
+        }
+
+        .tab-button {
+            padding: 12px 24px;
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            border-radius: 10px;
+            color: #fff;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .tab-button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .tab-button.active {
+            background: rgba(255, 255, 255, 0.4);
+            box-shadow: 0 4px 15px rgba(255, 255, 255, 0.2);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .decision-tree {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+        }
+
+        .question {
+            font-size: 1.3em;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            border-left: 4px solid #4CAF50;
+        }
+
+        .options {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .option-button {
+            padding: 12px 20px;
+            background: linear-gradient(45deg, #ff6b6b, #ee5a52);
+            border: none;
+            border-radius: 10px;
+            color: #fff;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
+        }
+
+        .option-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(255, 107, 107, 0.4);
+        }
+
+        .result {
+            display: none;
+            padding: 20px;
+            background: linear-gradient(135deg, #4CAF50, #45a049);
+            border-radius: 15px;
+            margin-top: 20px;
+            box-shadow: 0 8px 25px rgba(76, 175, 80, 0.3);
+        }
+
+        .result.show {
+            display: block;
+            animation: slideIn 0.5s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .result h3 {
+            margin-bottom: 15px;
+            font-size: 1.8em;
+        }
+
+        .result-code {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 18px;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
+        .examples {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 15px;
+            margin-top: 20px;
+        }
+
+        .info-section {
+            margin-bottom: 30px;
+        }
+
+        .info-section h3 {
+            margin-bottom: 20px;
+            color: #4CAF50;
+            font-size: 1.5em;
+            border-bottom: 2px solid rgba(76, 175, 80, 0.3);
+            padding-bottom: 10px;
+        }
+
+        .info-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            margin: 15px 0;
+            border-radius: 10px;
+            border-left: 4px solid #2196F3;
+        }
+
+        .info-item h4 {
+            margin-bottom: 10px;
+            color: #fff;
+            font-size: 1.2em;
+        }
+
+        .info-item p {
+            margin: 8px 0;
+            line-height: 1.4;
+        }
+
+        .example-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 10px;
+            border-left: 4px solid #2196F3;
+        }
+
+        .reference-table {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            overflow-x: auto;
+        }
+
+        .reference-table table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        .reference-table th,
+        .reference-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .reference-table th {
+            background: rgba(255, 255, 255, 0.2);
+            font-weight: bold;
+        }
+
+        .reference-table tr:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .reset-button {
+            padding: 10px 20px;
+            background: linear-gradient(45deg, #ff9800, #f57c00);
+            border: none;
+            border-radius: 10px;
+            color: #fff;
+            cursor: pointer;
+            margin-top: 15px;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .reset-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(255, 152, 0, 0.4);
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4CAF50, #45a049);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Arma Reforger Animation Export Profile Tool</h1>
+        
+        <div class="tool-tabs">
+            <button class="tab-button active" onclick="showTab('decision-tree')">Decision Tree</button>
+            <button class="tab-button" onclick="showTab('information')">Information</button>
+            <button class="tab-button" onclick="showTab('examples')">Examples</button>
+        </div>
+
+        <!-- Decision Tree Tab -->
+        <div id="decision-tree" class="tab-content active">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress"></div>
+            </div>
+            
+            <div class="decision-tree">
+                <div id="step1" class="step">
+                    <div class="question">What type of animation are you creating?</div>
+                    <div class="options">
+                        <button class="option-button" onclick="nextStep(2, 'fullbody')">Full Body Animation (walking, running, gestures)</button>
+                        <button class="option-button" onclick="nextStep(2, 'weapon')">Weapon Animation (reload, trigger, bolt)</button>
+                        <button class="option-button" onclick="nextStep(2, 'additive')">Additive Animation (overlay on existing)</button>
+                        <button class="option-button" onclick="nextStep(2, 'vehicle')">Vehicle Animation (doors, moving parts)</button>
+                    </div>
+                </div>
+
+                <div id="step2" class="step" style="display: none;">
+                    <div class="question">Should this animation layer with other animations?</div>
+                    <div class="options">
+                        <button class="option-button" onclick="nextStep(3, 'replace')">Replace underlying animation completely</button>
+                        <button class="option-button" onclick="nextStep(3, 'add')">Add to/blend with underlying animation</button>
+                        <button class="option-button" onclick="nextStep(3, 'precise')">Need precise positioning (weapons, interactions)</button>
+                    </div>
+                    <button class="reset-button" onclick="resetDecisionTree()">Cancel & Start Over</button>
+                </div>
+
+                <div id="step3" class="step" style="display: none;">
+                    <div class="question">What transforms does your bone need?</div>
+                    <div class="options">
+                        <button class="option-button" onclick="nextStep(4, 'both')">Both Position and Rotation</button>
+                        <button class="option-button" onclick="nextStep(4, 'rotation')">Only Rotation</button>
+                        <button class="option-button" onclick="nextStep(4, 'position')">Only Position</button>
+                        <button class="option-button" onclick="nextStep(4, 'generated')">Generated/Procedural bone</button>
+                    </div>
+                    <button class="reset-button" onclick="resetDecisionTree()">Cancel & Start Over</button>
+                </div>
+
+                <div id="step4" class="step" style="display: none;">
+                    <div class="question">Is this for a special use case?</div>
+                    <div class="options">
+                        <button class="option-button" onclick="showResult()">Standard animation</button>
+                        <button class="option-button" onclick="showResult('model-space')">Model space relative animation</button>
+                        <button class="option-button" onclick="showResult('global-gen')">Global space generated</button>
+                        <button class="option-button" onclick="showResult('local-gen')">Local space generated</button>
+                    </div>
+                    <button class="reset-button" onclick="resetDecisionTree()">Cancel & Start Over</button>
+                </div>
+
+                <div id="result" class="result">
+                    <h3>Recommended Export Profile Setting:</h3>
+                    <div class="result-code" id="result-code">TRA</div>
+                    <div id="result-explanation"></div>
+                    <button class="reset-button" onclick="resetDecisionTree()">Start Over</button>
+                </div>
+                
+            </div>
+        </div>
+
+        <!-- Information Tab -->
+        <div id="information" class="tab-content">
+            <div class="reference-table">
+                <h2>Export Profile Settings Information</h2>
+                
+                <div class="info-section">
+                    <h3>Standard Elements</h3>
+                    <div class="info-item">
+                        <h4>Scene_Root - Always Required</h4>
+                        <p><strong>What it does:</strong> Standard generated bone that appears in every export profile</p>
+                        <p><strong>Format:</strong> "Scene_Root" "" "TRG" $genFn { "generateSceneRootMB" }</p>
+                        <p><strong>Technical details:</strong> Uses TRG with generateSceneRootMB function, no parent, always first bone</p>
+                        <p><strong>Purpose:</strong> Provides foundational positioning for the animation system</p>
+                        <p><strong>Note:</strong> This is automatically included - you don't need to make decisions about it</p>
+                    </div>
+                </div>
+                
+                <div class="info-section">
+                    <h3>Basic Export Types</h3>
+                    <div class="info-item">
+                        <h4>TRA - Translation & Rotation Absolute</h4>
+                        <p><strong>What it does:</strong> Full transform absolute - completely replaces underlying animation</p>
+                        <p><strong>When to use:</strong> Full body animations, weapon handling, any time you need precise control</p>
+                        <p><strong>Example:</strong> Walking animation where you want complete control over all body parts</p>
+                    </div>
+                    
+                    <div class="info-item">
+                        <h4>TRD - Translation & Rotation Differential</h4>
+                        <p><strong>What it does:</strong> Full transform differential/additive - adds to underlying animation</p>
+                        <p><strong>When to use:</strong> Additive animations, spine movement in reloads where you want base animation to show through</p>
+                        <p><strong>Example:</strong> Reload animation spine bones that add subtle movement to existing walk cycle</p>
+                    </div>
+                    
+                    <div class="info-item">
+                        <h4>RA - Rotation Absolute</h4>
+                        <p><strong>What it does:</strong> Rotation only absolute - replaces underlying rotation, keeps position</p>
+                        <p><strong>When to use:</strong> Weapon triggers, rotating parts that don't change position</p>
+                        <p><strong>Example:</strong> Weapon trigger that only rotates when pulled</p>
+                    </div>
+                    
+                    <div class="info-item">
+                        <h4>RD - Rotation Differential</h4>
+                        <p><strong>What it does:</strong> Rotation only differential - adds to underlying rotation</p>
+                        <p><strong>When to use:</strong> Additive head movement, secondary rotations on top of base animation</p>
+                        <p><strong>Example:</strong> Head turning that adds to existing body animation</p>
+                        <p><strong>Note:</strong> Theoretically useful but no examples found in official export profiles</p>
+                    </div>
+                    
+                    <div class="info-item">
+                        <h4>TA - Translation Absolute</h4>
+                        <p><strong>What it does:</strong> Translation only absolute - controls position, ignores rotation</p>
+                        <p><strong>When to use:</strong> Moving parts that slide without rotating</p>
+                        <p><strong>Example:</strong> Weapon sight slider that moves linearly along one axis</p>
+                        <p><strong>Real usage:</strong> w_sight_slider using TA for linear movement on weapon sights</p>
+                    </div>
+                    
+                    <div class="info-item">
+                        <h4>TD - Translation Differential</h4>
+                        <p><strong>What it does:</strong> Translation only differential - adds position changes</p>
+                        <p><strong>When to use:</strong> Additive position changes on top of base animation</p>
+                        <p><strong>Example:</strong> Subtle position shifts that layer with existing movement</p>
+                        <p><strong>Note:</strong> Very rarely used - no examples found in official export profiles</p>
+                    </div>
+                </div>
+                
+                <div class="info-section">
+                    <h3>Advanced/Special Cases</h3>
+                    <div class="info-item">
+                        <h4>TRG - Translation & Rotation Generated</h4>
+                        <p><strong>What it does:</strong> Generated bone in global space - uses procedural functions to calculate transforms</p>
+                        <p><strong>When to use:</strong> Scene root bones, special procedural bones that need global space calculation</p>
+                        <p><strong>Technical details:</strong> Uses $genFn script functions that generate matrix data in model space. Exported in Motion Builder world space if no parent/movement specified.</p>
+                        <p><strong>Example:</strong> Scene_Root with generateSceneRootMB function</p>
+                        <p><strong>Script signature:</strong> void generateSceneRoot(inout vector pMat[4], int pFrame, int pMaxFrame);</p>
+                    </div>
+                    
+                    <div class="info-item">
+                        <h4>TRL - Translation & Rotation Local Generated</h4>
+                        <p><strong>What it does:</strong> Generated bone in local space - uses procedural functions in parent coordinates</p>
+                        <p><strong>When to use:</strong> Local space procedural bones, advanced rigging scenarios where generation happens relative to parent</p>
+                        <p><strong>Technical details:</strong> Similar to TRG but calculations happen in parent bone space rather than global/model space</p>
+                        <p><strong>Example:</strong> Procedural bones that need local space calculations relative to their parent</p>
+                        <p><strong>Note:</strong> Very advanced use case - no examples found in official export profiles</p>
+                    </div>
+                    
+                    <div class="info-item">
+                        <h4>TRM - Translation & Rotation Model Space</h4>
+                        <p><strong>What it does:</strong> Model space relative to #movement bone - special coordinate system</p>
+                        <p><strong>When to use:</strong> Vehicle animations, parts that move relative to a specific movement base bone</p>
+                        <p><strong>Technical details:</strong> Uses the #movement bone as parent regardless of specified parent. The #movement attribute defines the model base bone and movement base.</p>
+                        <p><strong>Example:</strong> Specialized vehicle animations requiring model-space calculations</p>
+                        <p><strong>Note:</strong> The M flag forces #movement as parent - no examples found in official export profiles</p>
+                    </div>
+                </div>
+                
+                <div class="info-section">
+                    <h3>Parent Bone Logic</h3>
+                    <div class="info-item">
+                        <h4>Parent Bone Hierarchy Rules</h4>
+                        <p><strong>Parent specified:</strong> Bone is exported in parent space</p>
+                        <p><strong>No parent (""):</strong> #movement bone becomes the parent</p>
+                        <p><strong>MODEL SPACE flag (M):</strong> #movement bone is forced as parent</p>
+                        <p><strong>No parent + No #movement:</strong> Bone exported in Motion Builder world space</p>
+                        <p><strong>Important:</strong> Understanding parent relationships is crucial for correct animation export</p>
+                    </div>
+                </div>
+                
+                <div class="info-section">
+                    <h3>Script Functions</h3>
+                    <div class="info-item">
+                        <h4>Available Function Types</h4>
+                        <p><strong>$boneFn:</strong> Model space matrix modifications</p>
+                        <p><strong>$boneFnLocal:</strong> Parent space matrix modifications</p>
+                        <p><strong>$genFn:</strong> Model space matrix generator (for generated bones)</p>
+                        <p><strong>Script signatures:</strong></p>
+                        <div class="result-code">void defaultBoneFunction(inout vector pMat[4]);<br/>void generateSceneRoot(inout vector pMat[4], int pFrame, int pMaxFrame);</div>
+                        <p><strong>Note:</strong> Functions are defined in "exportFn.c" and referenced by name</p>
+                    </div>
+                </div>
+                
+                <div class="info-section">
+                    <h3>Important Notes</h3>
+                    <div class="info-item">
+                        <h4>Global Attributes</h4>
+                        <p><strong>#trackCount:</strong> Number of tracks (informative, calculated after save)</p>
+                        <p><strong>#movement:</strong> Model base bone and movement base - used as parent when no parent specified</p>
+                        <p><strong>#defaultFn:</strong> Default GlobalSpace export modifier function name (from exportFn.c)</p>
+                        <p><strong>#defaultLocalFn:</strong> Default LocalSpace export modifier function name (from exportFn.c)</p>
+                    </div>
+                    
+                    <div class="info-item">
+                        <h4>Blender Users Warning</h4>
+                        <p><strong>Critical:</strong> Always keep #defaultFn empty ("") when using Blender!</p>
+                        <p><strong>Why:</strong> Otherwise additive animations will be exported incorrectly</p>
+                        <p><strong>Example:</strong> #defaultFn "" not #defaultFn "defaultFnMB"</p>
+                    </div>
+                    
+                    <div class="info-item">
+                        <h4>Coordinate Space Summary</h4>
+                        <p><strong>G (Global):</strong> Generated bone in global/world space</p>
+                        <p><strong>L (Local):</strong> Generated bone in local/parent space (unused in practice)</p>
+                        <p><strong>M (Model):</strong> Relative to #movement bone (unused in practice)</p>
+                        <p><strong>A (Absolute):</strong> Replaces underlying animation completely</p>
+                        <p><strong>D (Differential):</strong> Adds to/blends with underlying animation</p>
+                        <p><strong>Note:</strong> Only TRA, TRD, TRG, RA, TA are actually used in official profiles</p>
+                    </div>
+                    
+                    <div class="info-item">
+                        <h4>Creating Export Profiles</h4>
+                        <p><strong>Motion Builder method:</strong> Select skeleton roots → BI Export → Create profile</p>
+                        <p><strong>Workbench method:</strong> Enable "Generate Default Profile" in Import Settings</p>
+                        <p><strong>Tip:</strong> Start with generated profile, then customize for your specific needs</p>
+                    </div>
+                    
+                    <div class="info-item">
+                        <h4>Common Patterns</h4>
+                        <p><strong>Full Body Animation:</strong> All bones use TRA</p>
+                        <p><strong>Weapon Reload:</strong> Arms TRA, Spine TRD, Legs not exported</p>
+                        <p><strong>Weapon Triggers:</strong> RA (rotation only)</p>
+                        <p><strong>Vehicle Doors:</strong> Door RA, Handles TRA, Body/Root TRA</p>
+                        <p><strong>Additive Overlay:</strong> Affected bones use TRD or RD</p>
+                        <p><strong>Scene Root:</strong> TRG with $genFn for procedural generation</p>
+                        <p><strong>Weapon Sights:</strong> Sight RA, Sight Slider TA</p>
+                        <p><strong>Note:</strong> TD, TRL, TRM, and RD are defined but not found in any official export profiles</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Examples Tab -->
+        <div id="examples" class="tab-content">
+            <div class="examples">
+                <h2>Common Use Case Examples</h2>
+                
+                <div class="example-item">
+                    <h3>Full Body Walking Animation</h3>
+                    <p><strong>Use:</strong> TRA for all body bones</p>
+                    <p><strong>Reason:</strong> Complete control over character movement, replaces any underlying animation</p>
+                    <div class="result-code">"Hips" "EntityPosition" "TRA"</div>
+                </div>
+
+                <div class="example-item">
+                    <h3>Weapon Reload Animation</h3>
+                    <p><strong>Arms/Hands:</strong> TRA (precise positioning needed)</p>
+                    <p><strong>Spine:</strong> TRD (allow underlying animation to show through)</p>
+                    <p><strong>Legs:</strong> Not exported (use underlying walk/idle)</p>
+                    <div class="result-code">"LeftHand" "LeftForeArmTwist" "TRA"<br>"Spine1" "Hips" "TRD"</div>
+                </div>
+
+                <div class="example-item">
+                    <h3>Weapon Trigger</h3>
+                    <p><strong>Use:</strong> RA for trigger bone</p>
+                    <p><strong>Reason:</strong> Only rotation needed, no position change</p>
+                    <div class="result-code">"w_trigger" "w_root" "RA"</div>
+                </div>
+
+                <div class="example-item">
+                    <h3>Weapon Bolt/Magazine Release</h3>
+                    <p><strong>Use:</strong> TRA for moving parts</p>
+                    <p><strong>Reason:</strong> Both position and rotation changes</p>
+                    <div class="result-code">"w_bolt" "w_root" "TRA"<br>"w_mag_release" "w_root" "TRA"</div>
+                </div>
+
+                <div class="example-item">
+                    <h3>Additive Head Movement</h3>
+                    <p><strong>Use:</strong> TRD for head/neck bones</p>
+                    <p><strong>Reason:</strong> Adds to existing head movement from body animation</p>
+                    <div class="result-code">"Head" "Neck3" "TRD"</div>
+                </div>
+
+                <div class="example-item">
+                    <h3>Vehicle Door Animation</h3>
+                    <p><strong>Door:</strong> RA (rotation only - doors pivot, don't translate)</p>
+                    <p><strong>Handles:</strong> TRA (both position and rotation changes)</p>
+                    <p><strong>Body/Root:</strong> TRA (standard vehicle hierarchy)</p>
+                    <div class="result-code">"v_door_L01" "v_body" "RA"<br/>"v_door_L01_handle" "v_door_L01" "TRA"<br/>"v_door_L01_handle_interior" "v_door_L01" "TRA"</div>
+                </div>
+
+                <div class="example-item">
+                    <h3>Weapon Sight Animation</h3>
+                    <p><strong>Sight:</strong> RA (rotation only - sight adjusts by rotating)</p>
+                    <p><strong>Sight Slider:</strong> TA (translation only - slides linearly without rotation)</p>
+                    <p><strong>Reason:</strong> Sight rotates for elevation, slider moves linearly for windage/range</p>
+                    <div class="result-code">"w_sight" "w_root" "RA"<br/>"w_sight_slider" "w_sight" "TA"</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentStep = 1;
+        let decisions = {
+            animationType: '',
+            blendMode: '',
+            transformType: '',
+            specialCase: ''
+        };
+
+        function showTab(tabName) {
+            // Hide all tabs
+            const tabs = document.querySelectorAll('.tab-content');
+            tabs.forEach(tab => tab.classList.remove('active'));
+            
+            const buttons = document.querySelectorAll('.tab-button');
+            buttons.forEach(button => button.classList.remove('active'));
+            
+            // Show selected tab
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        function nextStep(step, decision) {
+            // Hide current step
+            document.getElementById('step' + currentStep).style.display = 'none';
+            
+            // Store decision
+            switch(currentStep) {
+                case 1:
+                    decisions.animationType = decision;
+                    break;
+                case 2:
+                    decisions.blendMode = decision;
+                    break;
+                case 3:
+                    decisions.transformType = decision;
+                    break;
+                case 4:
+                    decisions.specialCase = decision;
+                    break;
+            }
+            
+            // Show next step
+            currentStep = step;
+            document.getElementById('step' + currentStep).style.display = 'block';
+            
+            // Update progress
+            updateProgress();
+        }
+
+        function updateProgress() {
+            const progress = (currentStep / 4) * 100;
+            document.getElementById('progress').style.width = progress + '%';
+        }
+
+        function showResult(specialCase = '') {
+            if (specialCase) {
+                decisions.specialCase = specialCase;
+            }
+            
+            // Hide current step
+            document.getElementById('step' + currentStep).style.display = 'none';
+            
+            // Determine result
+            const result = determineExportProfile();
+            
+            // Show result
+            document.getElementById('result-code').textContent = result.code;
+            document.getElementById('result-explanation').innerHTML = result.explanation;
+            document.getElementById('result').classList.add('show');
+            
+            // Update progress to 100%
+            document.getElementById('progress').style.width = '100%';
+        }
+
+        function determineExportProfile() {
+            const { animationType, blendMode, transformType, specialCase } = decisions;
+            
+            // Special cases first
+            if (specialCase === 'model-space') {
+                return {
+                    code: 'TRM',
+                    explanation: '<strong>TRM - Translation & Rotation Model Space</strong><br/>Perfect for vehicle animations and model-space relative movements.'
+                };
+            }
+            
+            if (specialCase === 'global-gen') {
+                return {
+                    code: 'TRG',
+                    explanation: '<strong>TRG - Translation & Rotation Generated</strong><br/>Used for generated bones in global space, typically for scene roots.'
+                };
+            }
+            
+            if (specialCase === 'local-gen') {
+                return {
+                    code: 'TRL',
+                    explanation: '<strong>TRL - Translation & Rotation Local Generated</strong><br/>Used for generated bones in local space.'
+                };
+            }
+            
+            // Standard logic
+            let code = '';
+            let explanation = '';
+            
+            // Determine transform type
+            if (transformType === 'both') {
+                code = 'TR';
+            } else if (transformType === 'rotation') {
+                code = 'R';
+            } else if (transformType === 'position') {
+                code = 'T';
+            }
+            
+            // Determine absolute/differential
+            if (blendMode === 'replace' || blendMode === 'precise') {
+                code += 'A';
+                explanation = '<strong>' + code + '</strong><br/>Absolute transform - replaces underlying animation completely. Perfect for precise positioning and full control.';
+            } else if (blendMode === 'add') {
+                code += 'D';
+                explanation = '<strong>' + code + '</strong><br/>Differential/Additive transform - adds to underlying animation. Great for layering animations and maintaining base movement.';
+            }
+            
+            // Add context-specific advice
+            if (animationType === 'weapon') {
+                explanation += '<br/><br/><strong>Weapon Tip:</strong> Use TRA for hands/arms that need precise positioning, TRD for spine to allow underlying movement.';
+            } else if (animationType === 'fullbody') {
+                explanation += '<br/><br/><strong>Full Body Tip:</strong> TRA is typically used for all bones in complete character animations.';
+            } else if (animationType === 'additive') {
+                explanation += '<br/><br/><strong>Additive Tip:</strong> TRD/RD allows the base animation to show through while adding your custom movement.';
+            }
+            
+            return { code, explanation };
+        }
+
+        function resetDecisionTree() {
+            currentStep = 1;
+            decisions = {
+                animationType: '',
+                blendMode: '',
+                transformType: '',
+                specialCase: ''
+            };
+            
+            // Hide all steps except first
+            for (let i = 2; i <= 4; i++) {
+                document.getElementById('step' + i).style.display = 'none';
+            }
+            document.getElementById('step1').style.display = 'block';
+            document.getElementById('result').classList.remove('show');
+            
+            // Reset progress
+            document.getElementById('progress').style.width = '0%';
+        }
+
+        // Initialize
+        updateProgress();
+    </script>
+</body>
+</html>
