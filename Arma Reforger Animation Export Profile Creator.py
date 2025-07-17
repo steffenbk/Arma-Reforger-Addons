@@ -1,6 +1,6 @@
 bl_info = {
     "name": "Arma Reforger Animation Export Profile Creator",
-    "author": "Your Name",
+    "author": "steffen",
     "version": (1, 1, 0),
     "blender": (4, 2, 0),
     "location": "3D Viewport > Sidebar > AR Animation Export",
@@ -66,7 +66,7 @@ class ARPROFILE_PG_settings(PropertyGroup):
     default_fn: StringProperty(
         name="Default Function",
         description="Default GlobalSpace export modifier (MUST be empty for Blender! Use defaultFnMB only for MotionBuilder)",
-        default=""
+        default="defaultFnMB"
     )
     
     default_local_fn: StringProperty(
@@ -352,7 +352,7 @@ class ARPROFILE_OT_set_global_weapon(Operator):
     def execute(self, context):
         settings = context.scene.arprofile_settings
         settings.movement_bone = ""
-        settings.default_fn = ""
+        settings.default_fn = "defaultFnMB"
         settings.default_local_fn = ""
         self.report({'INFO'}, "Applied weapon global settings")
         return {'FINISHED'}
@@ -525,7 +525,7 @@ class ARPROFILE_OT_load_preset(Operator):
         
         # Update settings
         settings.track_count = len(settings.tracks)
-        settings.default_fn = ""  # MUST be empty for Blender!
+        settings.default_fn = "defaultFnMB"  # Always use defaultFnMB for presets
         settings.default_local_fn = ""
         
         self.report({'INFO'}, f"Loaded {self.preset_type} preset with {len(settings.tracks)} tracks")
@@ -700,7 +700,21 @@ class ARPROFILE_OT_export_profile(Operator):
                 f.write(f' #defaultLocalFn "{settings.default_local_fn}"\n')
                 f.write(" $tracks {\n")
                 
+                # Sort tracks to put root bones first (bones with no parent)
+                sorted_tracks = []
+                root_tracks = []
+                child_tracks = []
+                
                 for track in settings.tracks:
+                    if track.parent_bone == "":
+                        root_tracks.append(track)
+                    else:
+                        child_tracks.append(track)
+                
+                # Root bones first, then child bones
+                sorted_tracks = root_tracks + child_tracks
+                
+                for track in sorted_tracks:
                     line = f'  "{track.bone_name}" "{track.parent_bone}" "{track.flags}"'
                     
                     # Add function modifiers
