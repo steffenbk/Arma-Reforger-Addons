@@ -287,6 +287,9 @@ class ARMA_OT_switch_animation(Operator):
         
         # Update the switcher list to refresh the active highlight
         bpy.ops.arma.update_switcher()
+        
+        # Clear the UIList selection to avoid blue highlight confusion
+        scene.arma_nla_props.switcher_index = -1
             
         return {'FINISHED'}
 
