@@ -5,10 +5,10 @@ import re
 
 bl_info = {
     "name": "Arma Reforger NLA Automation",
-    "author": "Your Name", 
+    "author": "steffen", 
     "version": (1, 0, 0),
     "blender": (4, 2, 0),
-    "location": "View3D > Sidebar > Arma Tools",
+    "location": "View3D > Sidebar > AR Nla tool",
     "description": "Automate NLA strip creation and action management for Arma Reforger weapons",
     "category": "Animation",
 }
@@ -379,7 +379,7 @@ class ARMA_PT_nla_panel(Panel):
     bl_idname = "ARMA_PT_nla_panel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = "Arma Tools"
+    bl_category = "AR Nla tool"
     
     def draw(self, context):
         layout = self.layout
