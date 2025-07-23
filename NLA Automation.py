@@ -5,10 +5,10 @@ import re
 
 bl_info = {
     "name": "Arma Reforger NLA Automation",
-    "author": "steffen", 
+    "author": "Your Name", 
     "version": (1, 0, 0),
     "blender": (4, 2, 0),
-    "location": "View3D > Sidebar > AR Nla tool",
+    "location": "View3D > Sidebar > Arma Tools",
     "description": "Automate NLA strip creation and action management for Arma Reforger weapons",
     "category": "Animation",
 }
@@ -117,39 +117,6 @@ class ARMA_OT_select_all_actions(Operator):
         self.report({'INFO'}, f"{action_word} all actions")
         return {'FINISHED'}
 
-class ARMA_OT_filter_weapon_actions(Operator):
-    bl_idname = "arma.filter_weapon_actions"
-    bl_label = "Select Weapon Actions"
-    bl_description = "Auto-select actions that match common weapon animation patterns"
-    
-    def execute(self, context):
-        scene = context.scene
-        arma_props = scene.arma_nla_props
-        
-        weapon_patterns = [
-            r'p_.*_ik$',
-            r'p_.*_trigger.*',
-            r'p_.*_weapon_inspection.*',
-            r'p_.*_erc_.*',
-            r'p_.*_pne_.*',
-            r'.*_reload.*',
-            r'.*_fire.*',
-            r'.*_bolt.*',
-            r'.*_safety.*'
-        ]
-        
-        selected_count = 0
-        for item in arma_props.action_list:
-            item.selected = False
-            for pattern in weapon_patterns:
-                if re.match(pattern, item.name, re.IGNORECASE):
-                    item.selected = True
-                    selected_count += 1
-                    break
-                    
-        self.report({'INFO'}, f"Selected {selected_count} weapon-related actions")
-        return {'FINISHED'}
-
 class ARMA_OT_process_nla(Operator):
     bl_idname = "arma.process_nla"
     bl_label = "Process NLA"
@@ -223,7 +190,8 @@ class ARMA_OT_process_nla(Operator):
                 
                 strip = track.strips.new(action.name, int(action.frame_range[0]), action)
                 strip.name = f"ref_{action_name}"
-                print(f"DEBUG: Pushed down to NLA strip: {strip.name}")
+                strip.blend_type = 'COMBINE'  # Set to Combine instead of Replace
+                print(f"DEBUG: Pushed down to NLA strip: {strip.name} (blend: {strip.blend_type})")
                 
                 armature.animation_data.action = None
                 
@@ -379,7 +347,7 @@ class ARMA_PT_nla_panel(Panel):
     bl_idname = "ARMA_PT_nla_panel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = "AR Nla tool"
+    bl_category = "AR NLA Tool"
     
     def draw(self, context):
         layout = self.layout
@@ -396,7 +364,6 @@ class ARMA_PT_nla_panel(Panel):
         
         row = box.row()
         row.operator("arma.refresh_actions", icon='FILE_REFRESH')
-        row.operator("arma.filter_weapon_actions", icon='FILTER')
         
         row = box.row()
         row.operator("arma.select_all_actions", text="Select All", icon='CHECKBOX_HLT').select_all = True
@@ -457,7 +424,6 @@ classes = [
     ArmaReforgerNLAProperties,
     ARMA_OT_refresh_actions,
     ARMA_OT_select_all_actions,
-    ARMA_OT_filter_weapon_actions,
     ARMA_OT_process_nla,
     ARMA_OT_switch_animation,
     ARMA_OT_update_switcher,
