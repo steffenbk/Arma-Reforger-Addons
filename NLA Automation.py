@@ -284,6 +284,9 @@ class ARMA_OT_switch_animation(Operator):
             self.report({'INFO'}, f"Switched to: {self.action_name}")
         else:
             self.report({'WARNING'}, f"Track '{target_track_name}' not found, but action set")
+        
+        # Update the switcher list to refresh the active highlight
+        bpy.ops.arma.update_switcher()
             
         return {'FINISHED'}
 
