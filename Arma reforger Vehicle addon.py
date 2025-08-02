@@ -1642,7 +1642,140 @@ class ARVEHICLES_OT_create_empties(bpy.types.Operator):
             
         return {'FINISHED'}
 
-
+    def _get_selected_dimensions(self, context):
+        """Calculate dimensions and center of selected objects"""
+        # Check if objects are selected
+        if len(context.selected_objects) == 0:
+            # Return default dimensions and center if no selection
+            return (4.0, 1.8, 1.5), (0, 0, 0)
+        
+        # Find all mesh objects in selection
+        mesh_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
+        
+        if not mesh_objects:
+            # Return default dimensions and center if no mesh objects
+            return (4.0, 1.8, 1.5), (0, 0, 0)
+        
+        # Calculate current vehicle dimensions and center
+        min_x, min_y, min_z = float('inf'), float('inf'), float('inf')
+        max_x, max_y, max_z = float('-inf'), float('-inf'), float('-inf')
+        
+        for obj in mesh_objects:
+            for vert in obj.data.vertices:
+                world_co = obj.matrix_world @ vert.co
+                min_x = min(min_x, world_co.x)
+                min_y = min(min_y, world_co.y)
+                min_z = min(min_z, world_co.z)
+                max_x = max(max_x, world_co.x)
+                max_y = max(max_y, world_co.y)
+                max_z = max(max_z, world_co.z)
+        
+        # Calculate center and dimensions
+        center_x = (min_x + max_x) / 2
+        center_y = (min_y + max_y) / 2
+        center_z = (min_z + max_z) / 2
+        length = max_y - min_y  # Y is length
+        width = max_x - min_x   # X is width
+        height = max_z - min_z  # Z is height
+        
+        return (length, width, height), (center_x, center_y, center_z)
+    
+    def _generate_crew_positions(self, num_crew, dimensions, center):
+        """Generate crew position empties"""
+        length, width, height = dimensions
+        center_x, center_y, center_z = center
+        
+        positions = []
+        
+        # Driver position
+        positions.append(("driver", (center_x + 0.35, center_y + 0.2, center_z + 0.85)))
+        
+        if num_crew > 1:
+            # Co-driver position
+            positions.append(("codriver", (center_x - 0.35, center_y + 0.2, center_z + 0.85)))
+        
+        # Additional crew positions
+        for i in range(2, num_crew):
+            crew_num = i - 1  # Start from cargo01
+            x_offset = 0.35 if i % 2 == 0 else -0.35  # Alternate sides
+            y_offset = 0.2 - (crew_num * 0.5)  # Move back
+            positions.append((f"cargo{crew_num:02d}", (center_x + x_offset, center_y + y_offset, center_z + 0.85)))
+        
+        return positions
+    
+    def _generate_component_positions(self, dimensions, center):
+        """Generate vehicle component empties"""
+        length, width, height = dimensions
+        center_x, center_y, center_z = center
+        
+        positions = [
+            ("engine", (center_x, center_y + length * 0.35, center_z + height * 0.3)),
+            ("exhaust", (center_x + 0.3, center_y - length * 0.42, center_z + 0.2)),
+            ("frontlight_left", (center_x + width * 0.4, center_y + length * 0.47, center_z + height * 0.3)),
+            ("frontlight_right", (center_x - width * 0.4, center_y + length * 0.47, center_z + height * 0.3)),
+            ("backlight_left", (center_x + width * 0.4, center_y - length * 0.47, center_z + height * 0.3)),
+            ("backlight_right", (center_x - width * 0.4, center_y - length * 0.47, center_z + height * 0.3)),
+        ]
+        
+        return positions
+    
+    def _generate_wheel_positions(self, num_wheels, dimensions, center):
+        """Generate wheel position empties"""
+        length, width, height = dimensions
+        center_x, center_y, center_z = center
+        
+        positions = []
+        
+        # Front wheels
+        front_y = center_y + length * 0.35
+        wheel_x_offset = width * 0.42
+        wheel_z = center_z + 0.3
+        
+        positions.append((f"wheel_1_1", (center_x + wheel_x_offset, front_y, wheel_z)))  # Front right
+        positions.append((f"wheel_1_2", (center_x - wheel_x_offset, front_y, wheel_z)))  # Front left
+        
+        # Rear wheels
+        rear_y = center_y - length * 0.35
+        positions.append((f"wheel_2_1", (center_x + wheel_x_offset, rear_y, wheel_z)))  # Rear right
+        positions.append((f"wheel_2_2", (center_x - wheel_x_offset, rear_y, wheel_z)))  # Rear left
+        
+        # Additional wheels for trucks/APCs
+        if num_wheels > 4:
+            for i in range(4, num_wheels, 2):
+                axle_num = (i // 2) + 1
+                # Space additional axles between front and rear
+                y_pos = center_y + front_y - ((i - 2) * length * 0.2)
+                positions.append((f"wheel_{axle_num}_1", (center_x + wheel_x_offset, y_pos, wheel_z)))
+                positions.append((f"wheel_{axle_num}_2", (center_x - wheel_x_offset, y_pos, wheel_z)))
+        
+        return positions
+    
+    def _generate_damage_zones(self, dimensions, center, vehicle_type):
+        """Generate damage zone empties"""
+        length, width, height = dimensions
+        center_x, center_y, center_z = center
+        
+        positions = [
+            ("dmg_zone_engine", (center_x, center_y + length * 0.35, center_z + height * 0.3)),
+            ("dmg_zone_fueltank", (center_x, center_y - length * 0.35, center_z + height * 0.3)),
+            ("dmg_zone_body", (center_x, center_y, center_z + height * 0.5)),
+        ]
+        
+        # Add turret damage zone for military vehicles
+        if vehicle_type == 'apc':
+            positions.append(("dmg_zone_turret", (center_x, center_y, center_z + height * 0.8)))
+        
+        return positions
+    
+    def _create_empty(self, name, position, collection, display_type, size):
+        """Create an empty object at the specified position"""
+        empty = bpy.data.objects.new(name, None)
+        empty.empty_display_type = display_type
+        empty.empty_display_size = size
+        empty.location = position
+        
+        collection.objects.link(empty)
+        return empty
 
 class ARVEHICLES_OT_separate_vehicle_components(bpy.types.Operator):
     """Separate selected components and optionally add sockets and bones for Arma Reforger"""
