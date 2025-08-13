@@ -138,7 +138,15 @@ class ARVEHICLES_OT_create_ucx_collision(bpy.types.Operator):
     bl_label = "Create UCX Collision"
     bl_options = {'REGISTER', 'UNDO'}
     
-    target_faces: bpy.props.IntProperty(name="Target Faces", default=80, min=20, max=500)
+    method: bpy.props.EnumProperty(
+        name="Method",
+        items=[
+            ('CONVEX', "Convex Hull", "Simplified convex hull"),
+            ('DETAILED', "Detailed", "Preserves shape better"),
+        ],
+        default='CONVEX'
+    )
+    target_faces: bpy.props.IntProperty(name="Target Faces", default=80, min=20, max=5000)
     padding: bpy.props.FloatProperty(name="Padding", default=0.02, min=0.0, max=0.1)
     
     def execute(self, context):
@@ -151,60 +159,88 @@ class ARVEHICLES_OT_create_ucx_collision(bpy.types.Operator):
             self.report({'ERROR'}, "No mesh objects selected")
             return {'CANCELLED'}
         
-        collision_mesh = bpy.data.meshes.new("UCX_body_mesh")
-        collision_obj = bpy.data.objects.new("UCX_body", collision_mesh)
-        context.collection.objects.link(collision_obj)
+        collision_objects = []
+        total_faces = 0
         
-        all_verts = []
-        for obj in mesh_objects:
-            for vert in obj.data.vertices:
-                all_verts.append(obj.matrix_world @ vert.co)
+        for idx, source_obj in enumerate(mesh_objects):
+            bpy.ops.object.select_all(action='DESELECT')
+            source_obj.select_set(True)
+            context.view_layer.objects.active = source_obj
+            
+            bpy.ops.object.duplicate()
+            dup_obj = context.selected_objects[0]
+            
+            if len(mesh_objects) == 1:
+                dup_obj.name = "UCX_body"
+            else:
+                dup_obj.name = f"UCX_body_part_{idx}"
+                
+            collision_objects.append(dup_obj)
+            
+            part_target_faces = int(self.target_faces / len(mesh_objects))
+            current_faces = len(dup_obj.data.polygons)
+            
+            # Apply convex hull if CONVEX method is selected
+            if self.method == 'CONVEX':
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.select_all(action='SELECT')
+                bpy.ops.mesh.convex_hull()
+                bpy.ops.object.mode_set(mode='OBJECT')
+            
+            # Apply face reduction if needed
+            if current_faces > part_target_faces:
+                obj_dimensions = dup_obj.dimensions
+                is_flat = min(obj_dimensions) < max(obj_dimensions) * 0.1
+                
+                if is_flat:
+                    target_ratio = max(0.8, part_target_faces / current_faces)
+                else:
+                    target_ratio = part_target_faces / current_faces
+                
+                if target_ratio < 1.0:
+                    decimate = dup_obj.modifiers.new(name="Decimate", type='DECIMATE')
+                    decimate.ratio = max(0.1, target_ratio)
+                    bpy.ops.object.modifier_apply(modifier=decimate.name)
+            
+            # Apply padding if needed
+            if self.padding > 0:
+                solidify = dup_obj.modifiers.new(name="Solidify", type='SOLIDIFY')
+                solidify.thickness = self.padding
+                solidify.offset = 1.0
+                bpy.ops.object.modifier_apply(modifier=solidify.name)
+            
+            # Clean up mesh
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.mesh.select_all(action='SELECT')
+            obj_dimensions = dup_obj.dimensions
+            is_flat = min(obj_dimensions) < max(obj_dimensions) * 0.1
+            merge_threshold = 0.0001 if is_flat else 0.001
+            bpy.ops.mesh.remove_doubles(threshold=merge_threshold)
+            bpy.ops.object.mode_set(mode='OBJECT')
+            
+            # Apply material and properties
+            if "UCX_Material" not in bpy.data.materials:
+                mat = bpy.data.materials.new(name="UCX_Material")
+                mat.diffuse_color = (0.1, 0.1, 0.1, 0.7)
+            else:
+                mat = bpy.data.materials["UCX_Material"]
+            
+            dup_obj.data.materials.clear()
+            dup_obj.data.materials.append(mat)
+            dup_obj["layer_preset"] = "Collision_Vehicle"
+            dup_obj["usage"] = "PhyCol"
+            
+            total_faces += len(dup_obj.data.polygons)
         
-        temp_mesh = bpy.data.meshes.new("temp_mesh")
-        temp_obj = bpy.data.objects.new("temp_obj", temp_mesh)
-        context.collection.objects.link(temp_obj)
-        temp_mesh.from_pydata(all_verts, [], [])
-        temp_mesh.update()
-        
+        # Select all collision objects (no empty parent)
         bpy.ops.object.select_all(action='DESELECT')
-        temp_obj.select_set(True)
-        context.view_layer.objects.active = temp_obj
+        for obj in collision_objects:
+            obj.select_set(True)
         
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.mesh.select_all(action='SELECT')
-        bpy.ops.mesh.convex_hull()
-        bpy.ops.object.mode_set(mode='OBJECT')
+        if collision_objects:
+            context.view_layer.objects.active = collision_objects[0]
         
-        current_faces = len(temp_obj.data.polygons)
-        if current_faces > self.target_faces:
-            decimate = temp_obj.modifiers.new(name="Decimate", type='DECIMATE')
-            decimate.ratio = min(1.0, self.target_faces / max(1, current_faces))
-            bpy.ops.object.modifier_apply(modifier=decimate.name)
-        
-        if self.padding > 0:
-            solidify = temp_obj.modifiers.new(name="Solidify", type='SOLIDIFY')
-            solidify.thickness = self.padding
-            solidify.offset = 1.0
-            bpy.ops.object.modifier_apply(modifier=solidify.name)
-        
-        collision_obj.data = temp_obj.data.copy()
-        bpy.data.objects.remove(temp_obj)
-        
-        if "UCX_Material" not in bpy.data.materials:
-            mat = bpy.data.materials.new(name="UCX_Material")
-            mat.diffuse_color = (0.1, 0.1, 0.1, 0.7)
-        else:
-            mat = bpy.data.materials["UCX_Material"]
-        
-        collision_obj.data.materials.append(mat)
-        collision_obj["layer_preset"] = "Collision_Vehicle"
-        collision_obj["usage"] = "PhyCol"
-        
-        bpy.ops.object.select_all(action='DESELECT')
-        collision_obj.select_set(True)
-        context.view_layer.objects.active = collision_obj
-        
-        self.report({'INFO'}, f"Created UCX collision with {len(collision_obj.data.polygons)} faces")
+        self.report({'INFO'}, f"Created UCX collision with {total_faces} total faces")
         return {'FINISHED'}
     
     def invoke(self, context, event):
@@ -223,7 +259,7 @@ class ARVEHICLES_OT_create_firegeo_collision(bpy.types.Operator):
         ],
         default='DETAILED'
     )
-    target_faces: bpy.props.IntProperty(name="Target Faces", default=400, min=100, max=2000)
+    target_faces: bpy.props.IntProperty(name="Target Faces", default=400, min=100, max=5000)
     offset: bpy.props.FloatProperty(name="Offset", default=0.01, min=0.0, max=0.05)
     
     def execute(self, context):
@@ -235,9 +271,6 @@ class ARVEHICLES_OT_create_firegeo_collision(bpy.types.Operator):
         if not mesh_objects:
             self.report({'ERROR'}, "No mesh objects selected")
             return {'CANCELLED'}
-        
-        collision_parent = bpy.data.objects.new("UTM_vehicle", None)
-        context.collection.objects.link(collision_parent)
         
         collision_objects = []
         total_faces = 0
@@ -251,7 +284,7 @@ class ARVEHICLES_OT_create_firegeo_collision(bpy.types.Operator):
             dup_obj = context.selected_objects[0]
             
             if len(mesh_objects) == 1:
-                dup_obj.name = "UTM_vehicle_mesh"
+                dup_obj.name = "UTM_vehicle"
             else:
                 dup_obj.name = f"UTM_vehicle_part_{idx}"
                 
@@ -296,24 +329,24 @@ class ARVEHICLES_OT_create_firegeo_collision(bpy.types.Operator):
             
             dup_obj.data.materials.clear()
             dup_obj.data.materials.append(mat)
-            dup_obj.parent = collision_parent
             dup_obj["layer_preset"] = "Collision_Vehicle"
             dup_obj["usage"] = "FireGeo"
             
             total_faces += len(dup_obj.data.polygons)
         
+        # Select all collision objects instead of creating empty parent
         bpy.ops.object.select_all(action='DESELECT')
-        collision_parent.select_set(True)
         for obj in collision_objects:
             obj.select_set(True)
-        context.view_layer.objects.active = collision_parent
+        
+        if collision_objects:
+            context.view_layer.objects.active = collision_objects[0]
         
         self.report({'INFO'}, f"Created FireGeo collision with {total_faces} total faces")
         return {'FINISHED'}
     
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
-
 class ARVEHICLES_OT_create_wheel_collisions(bpy.types.Operator):
     bl_idname = "arvehicles.create_wheel_collisions"
     bl_label = "Create Wheel Collisions"
