@@ -624,6 +624,7 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
     
     add_bone: bpy.props.BoolProperty(name="Add Bone", description="Add a bone at the component's location", default=False)
     custom_bone_name: bpy.props.StringProperty(name="Custom Bone Name", default="")
+    auto_skinning: bpy.props.BoolProperty(name="Auto Skinning", description="Automatically setup skinning when adding bone", default=True)
     
     def _get_socket_type_for_component(self, component_type):
         """Get the matching socket type for a component type"""
@@ -701,20 +702,12 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         new_obj.name = new_name
         new_obj["component_type"] = self.component_type
         
-        # Find or create armature
+        # Find existing armature - check for any armature first
         armature = None
         for armature_obj in bpy.data.objects:
-            if armature_obj.type == 'ARMATURE' and "VehicleArmature" in armature_obj.name:
+            if armature_obj.type == 'ARMATURE':
                 armature = armature_obj
                 break
-        
-        # Parent the separated component to the armature if it exists
-        if armature:
-            bpy.ops.object.select_all(action='DESELECT')
-            new_obj.select_set(True)
-            armature.select_set(True)
-            context.view_layer.objects.active = armature
-            bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
         
         socket = None
         bone = None
@@ -733,8 +726,8 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         if self.add_bone:
             if not armature:
                 # Create armature if it doesn't exist
-                armature_data = bpy.data.armatures.new("VehicleArmature")
-                armature = bpy.data.objects.new("VehicleArmature", armature_data)
+                armature_data = bpy.data.armatures.new("Armature")
+                armature = bpy.data.objects.new("Armature", armature_data)
                 context.collection.objects.link(armature)
                 
                 # Create v_root bone first
@@ -745,30 +738,18 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
                 root_bone.tail = (0, 0.2, 0)
                 root_bone.roll = 0.0
                 bpy.ops.object.mode_set(mode='OBJECT')
-                
-                # Parent the separated component to the newly created armature
-                bpy.ops.object.select_all(action='DESELECT')
-                new_obj.select_set(True)
-                armature.select_set(True)
-                context.view_layer.objects.active = armature
-                bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
             
             # Generate bone name
             if self.custom_bone_name:
-                # User provided a specific custom bone name
                 bone_name = self.custom_bone_name
                 if not bone_name.startswith('v_'):
                     bone_name = 'v_' + bone_name
             elif bone_type == 'custom':
-                # Component type is custom, use the custom component name
                 if self.custom_name:
-                    # Use custom component name for bone
                     bone_name = f"v_{self.custom_name.lower().replace(' ', '_')}"
                 else:
-                    # Fallback to generic custom name
                     bone_name = f"v_{new_name.lower().replace(' ', '_')}"
             else:
-                # For predefined types, auto-increment if exists
                 bone_name = bone_type
                 original_bone_name = bone_name
                 counter = 1
@@ -791,19 +772,48 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
                 bone.parent = armature.data.edit_bones['v_root']
             
             bpy.ops.object.mode_set(mode='OBJECT')
+            
+            # Set up skinning for the separated component (if enabled)
+            if self.auto_skinning:
+                bpy.ops.object.select_all(action='DESELECT')
+                new_obj.select_set(True)
+                context.view_layer.objects.active = new_obj
+                
+                # Create vertex group for the bone
+                vertex_group = new_obj.vertex_groups.new(name=bone_name)
+                
+                # Also create v_root group for the main body (standard vehicle rigging)
+                if bone_name != "v_root":
+                    v_root_group = new_obj.vertex_groups.new(name="v_root")
+                
+                # Assign all vertices to the specific bone group
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.select_all(action='SELECT')
+                new_obj.vertex_groups.active = vertex_group
+                bpy.ops.object.vertex_group_assign()
+                bpy.ops.object.mode_set(mode='OBJECT')
+                
+                # Create armature modifier
+                armature_mod = new_obj.modifiers.new(name="Armature", type='ARMATURE')
+                armature_mod.object = armature
+                armature_mod.vertex_group = bone_name
+        
+        # Parent the separated component to the armature if it exists
+        if armature:
+            bpy.ops.object.select_all(action='DESELECT')
+            new_obj.select_set(True)
+            armature.select_set(True)
+            context.view_layer.objects.active = armature
+            bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
         
         # Create a socket empty if requested
         if self.add_socket:
             if self.custom_socket_name:
-                # User provided a specific custom socket name
                 socket_name = self.custom_socket_name
             elif socket_type == 'custom' and self.custom_name:
-                # Component type is custom, use the custom component name for socket
                 socket_name = f"Socket_{self.custom_name.replace(' ', '_').title()}"
             else:
-                # Use standard socket naming with proper capitalization
                 socket_name = f"Socket_{socket_type.replace('_', ' ').title().replace(' ', '_')}"
-                # Add numbering if socket already exists
                 existing_sockets = [o for o in bpy.data.objects if socket_name in o.name]
                 if existing_sockets:
                     socket_name = f"{socket_name}_{len(existing_sockets) + 1:02d}"
@@ -844,7 +854,7 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         if self.add_socket:
             report_msg += f" with socket (type: {socket_type})"
         if self.add_bone:
-            report_msg += f" with bone '{bone_name}'"
+            report_msg += f" with bone '{bone_name}' and automatic skinning"
         if self.set_origin_to_socket and self.add_socket:
             report_msg += ", origin set to socket"
             
@@ -870,80 +880,55 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         layout.prop(self, "add_bone")
         if self.add_bone:
             layout.prop(self, "custom_bone_name")
+            layout.prop(self, "auto_skinning")
 
 class ARVEHICLES_OT_create_armature(bpy.types.Operator):
     bl_idname = "arvehicles.create_armature"
     bl_label = "Create Vehicle Armature"
     bl_options = {'REGISTER', 'UNDO'}
-    
-    add_doors: bpy.props.BoolProperty(name="Add Door Bones", default=True)
-    add_wheels: bpy.props.BoolProperty(name="Add Wheel Bones", default=True)
-    num_wheels: bpy.props.IntProperty(name="Number of Wheels", default=4, min=2, max=8)
+    bl_description = "Create a minimal vehicle armature with v_root bone following Arma Reforger standards"
     
     def execute(self, context):
-        armature_data = bpy.data.armatures.new("VehicleArmature")
-        armature_obj = bpy.data.objects.new("VehicleArmature", armature_data)
+        # Check if armature already exists
+        existing_armature = None
+        for obj in bpy.data.objects:
+            if obj.type == 'ARMATURE' and obj.name in ["Armature", "VehicleArmature"]:
+                existing_armature = obj
+                break
+        
+        if existing_armature:
+            self.report({'INFO'}, f"Vehicle armature '{existing_armature.name}' already exists")
+            context.view_layer.objects.active = existing_armature
+            return {'FINISHED'}
+        
+        # Create armature - keep name as "Armature" per Arma standards
+        armature_data = bpy.data.armatures.new("Armature")
+        armature_obj = bpy.data.objects.new("Armature", armature_data)
         context.collection.objects.link(armature_obj)
+        
+        # Set armature at world origin with proper scale (required by Arma)
+        armature_obj.location = (0, 0, 0)
+        armature_obj.rotation_euler = (0, 0, 0)
+        armature_obj.scale = (1.0, 1.0, 1.0)
         
         context.view_layer.objects.active = armature_obj
         bpy.ops.object.mode_set(mode='EDIT')
         
-        bone_length = 0.2
-        
+        # Create v_root bone - the essential root bone for all vehicles
         root_bone = armature_data.edit_bones.new('v_root')
-        root_bone.head = (0, 0, 0)
-        root_bone.tail = (0, bone_length, 0)
-        root_bone.roll = 0
-        
-        body_bone = armature_data.edit_bones.new('v_body')
-        body_bone.head = (0, 0, 0.5)
-        body_bone.tail = (0, bone_length, 0.5)
-        body_bone.roll = 0
-        body_bone.parent = root_bone
-        
-        if self.add_wheels:
-            for i in range(self.num_wheels):
-                if i < 2:
-                    y_pos = 1.4
-                else:
-                    y_pos = -1.4
-                
-                x_pos = 0.75 if i % 2 == 0 else -0.75
-                
-                bone = armature_data.edit_bones.new(f'v_wheel_{i+1}')
-                bone.head = (x_pos, y_pos, 0.3)
-                bone.tail = (x_pos, y_pos + bone_length, 0.3)
-                bone.roll = 0
-                bone.parent = root_bone
-        
-        if self.add_doors:
-            door_left = armature_data.edit_bones.new('v_door_left')
-            door_left.head = (0.85, 0.2, 0.8)
-            door_left.tail = (0.85, 0.2 + bone_length, 0.8)
-            door_left.roll = 0
-            door_left.parent = root_bone
-            
-            door_right = armature_data.edit_bones.new('v_door_right')
-            door_right.head = (-0.85, 0.2, 0.8)
-            door_right.tail = (-0.85, 0.2 + bone_length, 0.8)
-            door_right.roll = 0
-            door_right.parent = root_bone
-        
-        steer_bone = armature_data.edit_bones.new('v_steeringwheel')
-        steer_bone.head = (0.3, 0.5, 0.9)
-        steer_bone.tail = (0.3, 0.5 + bone_length, 0.9)
-        steer_bone.roll = 0
-        steer_bone.parent = root_bone
+        root_bone.head = (0, 0, 0)  # At world origin as specified
+        root_bone.tail = (0, 0.2, 0)  # Y+ orientation as recommended
+        root_bone.roll = 0.0
         
         bpy.ops.object.mode_set(mode='OBJECT')
         
-        bone_count = len(armature_data.bones)
-        self.report({'INFO'}, f"Created vehicle armature with {bone_count} bones")
+        # Set display properties for easier bone visibility
+        armature_data.display_type = 'STICK'
+        armature_data.show_names = True
+        armature_obj.show_in_front = True
+        
+        self.report({'INFO'}, "Created minimal vehicle armature with v_root bone")
         return {'FINISHED'}
-    
-    def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self)
-
 class ARVEHICLES_OT_create_bone(bpy.types.Operator):
     bl_idname = "arvehicles.create_bone"
     bl_label = "Add Bone"
