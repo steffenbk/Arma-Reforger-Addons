@@ -707,13 +707,17 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         new_obj = context.selected_objects[-1]
         new_obj.name = new_name
         new_obj["component_type"] = self.component_type
-        
-        # Find existing armature - check for any armature first
+
+# Find existing armature - check for any armature first
         armature = None
         for armature_obj in bpy.data.objects:
             if armature_obj.type == 'ARMATURE':
                 armature = armature_obj
+                print(f"DEBUG: Found existing armature: {armature.name}")
                 break
+        
+        if not armature:
+            print("DEBUG: No armature found, will create new one if bone is requested")
         
         socket = None
         bone = None
