@@ -538,6 +538,7 @@ class ARVEHICLES_OT_create_center_of_mass(bpy.types.Operator):
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
 
+
 class ARVEHICLES_OT_create_socket(bpy.types.Operator):
     bl_idname = "arvehicles.create_socket"
     bl_label = "Create Vehicle Socket"
@@ -547,21 +548,50 @@ class ARVEHICLES_OT_create_socket(bpy.types.Operator):
     custom_name: bpy.props.StringProperty(name="Custom Name", default="")
     parent_to_armature: bpy.props.BoolProperty(
         name="Parent to Armature", 
-        default=True,  # Changed to True by default
+        default=True,
         description="Automatically parent socket to vehicle armature"
     )
     
     def execute(self, context):
-        # Determine socket position
         socket_location = (0, 0, 0)  # Default to origin
         
-        # If a mesh object is selected, use its center
-        if context.selected_objects:
+        # Check if we're in edit mode with faces selected
+        if context.mode == 'EDIT_MESH' and context.active_object and context.active_object.type == 'MESH':
+            obj = context.active_object
+            mesh = obj.data
+            
+            if mesh.total_face_sel > 0:
+                # Calculate center of selected faces
+                bm = bmesh.from_edit_mesh(mesh)
+                selected_faces = [f for f in bm.faces if f.select]
+                
+                if selected_faces:
+                    center = Vector((0, 0, 0))
+                    for face in selected_faces:
+                        center += face.calc_center_median()
+                    center /= len(selected_faces)
+                    
+                    # Transform to world space
+                    socket_location = obj.matrix_world @ center
+                    
+                    # Switch to object mode for socket creation
+                    bpy.ops.object.mode_set(mode='OBJECT')
+                else:
+                    self.report({'WARNING'}, "No faces selected, using object center")
+                    bbox_center = sum((obj.matrix_world @ Vector(corner) for corner in obj.bound_box), Vector()) / 8
+                    socket_location = bbox_center
+                    bpy.ops.object.mode_set(mode='OBJECT')
+            else:
+                self.report({'WARNING'}, "No faces selected, using object center")
+                bbox_center = sum((obj.matrix_world @ Vector(corner) for corner in obj.bound_box), Vector()) / 8
+                socket_location = bbox_center
+                bpy.ops.object.mode_set(mode='OBJECT')
+        
+        # Fallback: If a mesh object is selected in object mode, use its center
+        elif context.selected_objects:
             mesh_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
             if mesh_objects:
-                # Use the first selected mesh object's center
                 obj = mesh_objects[0]
-                # Calculate object center (bounding box center)
                 bbox_center = sum((obj.matrix_world @ Vector(corner) for corner in obj.bound_box), Vector()) / 8
                 socket_location = bbox_center
         
@@ -569,13 +599,12 @@ class ARVEHICLES_OT_create_socket(bpy.types.Operator):
         if self.custom_name:
             socket_name = self.custom_name
         else:
-            # Use proper title case naming instead of ALL CAPS
             socket_name = f"Socket_{self.socket_type.replace('_', ' ').title().replace(' ', '_')}"
-            # Add numbering if socket already exists
             existing_sockets = [o for o in bpy.data.objects if socket_name in o.name]
             if existing_sockets:
                 socket_name = f"{socket_name}_{len(existing_sockets) + 1:02d}"
         
+        # Create socket
         socket = bpy.data.objects.new(socket_name, None)
         socket.empty_display_type = 'ARROWS'
         socket.empty_display_size = 0.15
@@ -589,7 +618,6 @@ class ARVEHICLES_OT_create_socket(bpy.types.Operator):
         # Parent to armature if requested
         if self.parent_to_armature:
             armature = None
-            # Look for any armature, not just "VehicleArmature"
             for obj in bpy.data.objects:
                 if obj.type == 'ARMATURE':
                     armature = obj
@@ -601,19 +629,278 @@ class ARVEHICLES_OT_create_socket(bpy.types.Operator):
             else:
                 self.report({'WARNING'}, "No armature found to parent socket to")
         
-        # Fix context error - ensure we're in object mode before selecting
-        if context.mode != 'OBJECT':
-            bpy.ops.object.mode_set(mode='OBJECT')
-        
+        # Select the socket
         bpy.ops.object.select_all(action='DESELECT')
         socket.select_set(True)
         context.view_layer.objects.active = socket
         
-        self.report({'INFO'}, f"Created vehicle socket '{socket_name}' at {socket_location}")
+        self.report({'INFO'}, f"Created vehicle socket '{socket_name}' at selected faces")
         return {'FINISHED'}
     
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
+
+class ARVEHICLES_OT_add_to_object(bpy.types.Operator):
+    bl_idname = "arvehicles.add_to_object"
+    bl_label = "Add Bone/Socket to Object"
+    bl_options = {'REGISTER', 'UNDO'}
+    bl_description = "Add bone and/or socket to existing separated object"
+    
+    # Component type (unified for both bone and socket)
+    component_type: bpy.props.EnumProperty(name="Component Type", items=VEHICLE_COMPONENT_TYPES, default='door')
+    custom_name: bpy.props.StringProperty(name="Custom Name", default="")
+    
+    # What to create
+    add_socket: bpy.props.BoolProperty(name="Add Socket", description="Add a socket empty at the object's location", default=True)
+    add_bone: bpy.props.BoolProperty(name="Add Bone", description="Add a bone at the object's location", default=False)
+    auto_skinning: bpy.props.BoolProperty(name="Auto Skinning", description="Automatically setup skinning when adding bone", default=True)
+    
+    # Common options
+    use_object_center: bpy.props.BoolProperty(name="Use Object Center", description="Place at object center instead of origin", default=True)
+    
+    def _get_socket_type_for_component(self, component_type):
+        """Get the matching socket type for a component type"""
+        component_to_socket = {
+            'window': 'window', 'door': 'door', 'hood': 'hood', 'trunk': 'trunk',
+            'wheel': 'wheel', 'light': 'light', 'mirror': 'mirror', 'antenna': 'antenna',
+            'hatch': 'hatch', 'panel': 'panel', 'seat': 'seat', 'dashboard': 'dashboard',
+            'steering_wheel': 'steering_wheel', 'gear_shifter': 'gear_shifter',
+            'handbrake': 'handbrake', 'pedal': 'pedal', 'engine': 'engine',
+            'exhaust': 'exhaust', 'suspension': 'suspension', 'rotor': 'rotor',
+            'landing_gear': 'landing_gear', 'fuel_tank': 'fuel_tank',
+            'battery': 'battery', 'radiator': 'radiator',
+        }
+        return component_to_socket.get(component_type, 'custom')
+    
+    def _get_bone_type_for_component(self, component_type):
+        """Get the matching bone type for a component type"""
+        component_to_bone = {
+            'door': 'v_door_left', 'hood': 'v_hood', 'trunk': 'v_trunk',
+            'wheel': 'v_wheel_1', 'steering_wheel': 'v_steering_wheel',
+            'gear_shifter': 'v_gearshift', 'handbrake': 'v_handbrake',
+            'pedal': 'v_pedal_brake', 'exhaust': 'v_exhaust',
+            'suspension': 'v_suspension1', 'rotor': 'v_rotor',
+            'landing_gear': 'v_landing_gear', 'antenna': 'v_antenna',
+            'mirror': 'v_mirror_left', 'dashboard': 'v_dashboard_arm',
+        }
+        return component_to_bone.get(component_type, 'custom')
+    
+    def _get_component_type_for_object(self, obj_name):
+        """Guess component type from object name"""
+        name_lower = obj_name.lower()
+        if 'door' in name_lower:
+            return 'door'
+        elif 'window' in name_lower:
+            return 'window'
+        elif 'hood' in name_lower or 'bonnet' in name_lower:
+            return 'hood'
+        elif 'trunk' in name_lower or 'boot' in name_lower:
+            return 'trunk'
+        elif 'wheel' in name_lower:
+            return 'wheel'
+        elif 'light' in name_lower:
+            return 'light'
+        elif 'mirror' in name_lower:
+            return 'mirror'
+        elif 'antenna' in name_lower:
+            return 'antenna'
+        elif 'steering' in name_lower:
+            return 'steering_wheel'
+        elif 'exhaust' in name_lower:
+            return 'exhaust'
+        return 'custom'
+    
+    def execute(self, context):
+        if not context.selected_objects:
+            self.report({'ERROR'}, "No objects selected")
+            return {'CANCELLED'}
+        
+        target_obj = context.active_object
+        if not target_obj:
+            self.report({'ERROR'}, "No active object")
+            return {'CANCELLED'}
+        
+        # Find existing armature
+        armature = None
+        for armature_obj in bpy.data.objects:
+            if armature_obj.type == 'ARMATURE':
+                armature = armature_obj
+                break
+        
+        # Determine position (object center or origin)
+        if self.use_object_center and target_obj.type == 'MESH':
+            bbox_center = sum((target_obj.matrix_world @ Vector(corner) for corner in target_obj.bound_box), Vector()) / 8
+            location = bbox_center
+        else:
+            location = target_obj.matrix_world.translation
+        
+        bone_name = None
+        socket = None
+        
+        # Get the matching socket and bone types based on component type
+        socket_type = self._get_socket_type_for_component(self.component_type)
+        bone_type = self._get_bone_type_for_component(self.component_type)
+        
+        # Create bone if requested
+        if self.add_bone:
+            if not armature:
+                self.report({'ERROR'}, "No armature found. Create an armature first.")
+                return {'CANCELLED'}
+            
+            # Generate bone name
+            if self.component_type == 'custom':
+                if self.custom_name:
+                    bone_name = f"v_{self.custom_name.lower().replace(' ', '_')}"
+                else:
+                    bone_name = f"v_{target_obj.name.lower().replace(' ', '_')}"
+            else:
+                bone_name = bone_type
+                # Handle left/right detection for doors
+                if self.component_type == 'door' and target_obj.name:
+                    name_lower = target_obj.name.lower()
+                    if 'right' in name_lower or '_r' in name_lower:
+                        bone_name = 'v_door_right'
+            
+            # Check for duplicate bone names and increment
+            original_bone_name = bone_name
+            counter = 1
+            while bone_name in armature.data.bones:
+                bone_name = f"{original_bone_name}_{counter:02d}"
+                counter += 1
+            
+            # Create the bone
+            context.view_layer.objects.active = armature
+            bpy.ops.object.mode_set(mode='EDIT')
+            
+            bone = armature.data.edit_bones.new(bone_name)
+            bone.head = (location.x, location.y, location.z)
+            bone.tail = (location.x, location.y + 0.2, location.z)
+            bone.roll = 0.0
+            
+            # Parent to v_root if it exists
+            if 'v_root' in armature.data.edit_bones:
+                bone.parent = armature.data.edit_bones['v_root']
+            
+            bpy.ops.object.mode_set(mode='OBJECT')
+            
+            # Set up skinning if requested
+            if self.auto_skinning:
+                bpy.ops.object.select_all(action='DESELECT')
+                target_obj.select_set(True)
+                context.view_layer.objects.active = target_obj
+                
+                # Create vertex group for the bone
+                if bone_name not in target_obj.vertex_groups:
+                    vertex_group = target_obj.vertex_groups.new(name=bone_name)
+                    
+                    # Create v_root group if it doesn't exist
+                    if bone_name != "v_root" and "v_root" not in target_obj.vertex_groups:
+                        v_root_group = target_obj.vertex_groups.new(name="v_root")
+                    
+                    # Assign all vertices to the specific bone group
+                    bpy.ops.object.mode_set(mode='EDIT')
+                    bpy.ops.mesh.select_all(action='SELECT')
+                    target_obj.vertex_groups.active = vertex_group
+                    bpy.ops.object.vertex_group_assign()
+                    bpy.ops.object.mode_set(mode='OBJECT')
+                    
+                    # Create or update armature modifier
+                    armature_mod = None
+                    for mod in target_obj.modifiers:
+                        if mod.type == 'ARMATURE':
+                            armature_mod = mod
+                            break
+                    
+                    if not armature_mod:
+                        armature_mod = target_obj.modifiers.new(name="Armature", type='ARMATURE')
+                    
+                    # Always set/update the armature object reference
+                    armature_mod.object = armature
+                    armature_mod.vertex_group = bone_name
+        
+        # Parent the object to the armature if it exists and isn't already parented
+        if armature and target_obj.parent != armature:
+            bpy.ops.object.select_all(action='DESELECT')
+            target_obj.select_set(True)
+            armature.select_set(True)
+            context.view_layer.objects.active = armature
+            bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
+        
+        # Create socket if requested
+        if self.add_socket:
+            # Generate socket name
+            if self.component_type == 'custom':
+                if self.custom_name:
+                    socket_name = f"Socket_{self.custom_name.replace(' ', '_').title()}"
+                else:
+                    socket_name = f"Socket_{target_obj.name.replace(' ', '_').title()}"
+            else:
+                socket_name = f"Socket_{socket_type.replace('_', ' ').title().replace(' ', '_')}"
+                existing_sockets = [o for o in bpy.data.objects if socket_name in o.name]
+                if existing_sockets:
+                    socket_name = f"{socket_name}_{len(existing_sockets) + 1:02d}"
+            
+            # Create socket
+            socket = bpy.data.objects.new(socket_name, None)
+            socket.empty_display_type = 'ARROWS'
+            socket.empty_display_size = 0.15
+            socket.location = location
+            
+            context.collection.objects.link(socket)
+            
+            socket["socket_type"] = socket_type
+            socket["attached_part"] = target_obj.name
+            socket["vehicle_part"] = "attachment_point"
+            
+            # Parent socket to armature if it exists
+            if armature:
+                socket.parent = armature
+        
+        # Select the target object again
+        bpy.ops.object.select_all(action='DESELECT')
+        target_obj.select_set(True)
+        context.view_layer.objects.active = target_obj
+        
+        # Build report message
+        report_msg = f"Added to object '{target_obj.name}'"
+        if self.add_socket and self.add_bone:
+            report_msg += f" with socket and bone '{bone_name}'"
+        elif self.add_socket:
+            report_msg += f" with socket"
+        elif self.add_bone:
+            report_msg += f" with bone '{bone_name}'"
+        
+        if self.add_bone and self.auto_skinning:
+            report_msg += " and automatic skinning"
+        
+        self.report({'INFO'}, report_msg)
+        return {'FINISHED'}
+    
+    def invoke(self, context, event):
+        # Auto-guess component type from selected object name
+        if context.active_object:
+            guessed_component_type = self._get_component_type_for_object(context.active_object.name)
+            if guessed_component_type != 'custom':
+                self.component_type = guessed_component_type
+        
+        return context.window_manager.invoke_props_dialog(self, width=350)
+    
+    def draw(self, context):
+        layout = self.layout
+        
+        layout.prop(self, "component_type")
+        layout.prop(self, "custom_name")
+        
+        layout.separator()
+        layout.prop(self, "use_object_center")
+        
+        layout.separator()
+        layout.prop(self, "add_socket")
+        
+        layout.separator()
+        layout.prop(self, "add_bone")
+        if self.add_bone:
+            layout.prop(self, "auto_skinning")
 
 
 class ARVEHICLES_OT_separate_components(bpy.types.Operator):
@@ -1659,7 +1946,12 @@ class ARVEHICLES_PT_panel(bpy.types.Panel):
         box = layout.box()
         box.label(text="Component Separation", icon='MOD_BUILD')
         box.operator("arvehicles.separate_components", text="Separate Component", icon='UNLINKED')
+
         
+        col = box.column(align=True)
+        col.separator()
+        col.label(text="Add to Existing Objects:")
+        col.operator("arvehicles.add_to_object", text="Add Bone/Socket to Object", icon='EMPTY_ARROWS')
         box = layout.box()
         box.label(text="Collision", icon='MESH_CUBE')
         
@@ -1776,6 +2068,7 @@ classes = (
     ARVEHICLES_OT_create_armature,
     ARVEHICLES_OT_create_bone,
     ARVEHICLES_OT_setup_skinning,
+    ARVEHICLES_OT_add_to_object, 
     ARVEHICLES_OT_parent_to_armature,
     ARVEHICLES_OT_create_empties,
     ARVEHICLES_OT_create_vertex_group,
