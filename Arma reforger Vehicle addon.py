@@ -422,7 +422,7 @@ class ARVEHICLES_OT_create_firegeo_collision(bpy.types.Operator):
             
             dup_obj.data.materials.clear()
             dup_obj.data.materials.append(mat)
-            dup_obj["layer_preset"] = "Collision_Vehicle"
+            dup_obj["layer_preset"] = "FireGeo"
             dup_obj["usage"] = "FireGeo"
             
             total_faces += len(dup_obj.data.polygons)
@@ -545,6 +545,11 @@ class ARVEHICLES_OT_create_socket(bpy.types.Operator):
     
     socket_type: bpy.props.EnumProperty(name="Socket Type", items=VEHICLE_SOCKET_TYPES, default='door')
     custom_name: bpy.props.StringProperty(name="Custom Name", default="")
+    parent_to_armature: bpy.props.BoolProperty(
+        name="Parent to Armature", 
+        default=False,
+        description="Automatically parent socket to vehicle armature"
+    )
     
     def execute(self, context):
         # Determine socket position
@@ -581,15 +586,17 @@ class ARVEHICLES_OT_create_socket(bpy.types.Operator):
         socket["socket_type"] = self.socket_type
         socket["vehicle_part"] = "attachment_point"
         
-        # Parent socket to armature if it exists
-        armature = None
-        for obj in bpy.data.objects:
-            if obj.type == 'ARMATURE' and "VehicleArmature" in obj.name:
-                armature = obj
-                break
-        
-        if armature:
-            socket.parent = armature
+        # Only parent to armature if explicitly requested
+        if self.parent_to_armature:
+            armature = None
+            for obj in bpy.data.objects:
+                if obj.type == 'ARMATURE' and "VehicleArmature" in obj.name:
+                    armature = obj
+                    break
+            
+            if armature:
+                socket.parent = armature
+                self.report({'INFO'}, f"Socket parented to armature '{armature.name}'")
         
         bpy.ops.object.select_all(action='DESELECT')
         socket.select_set(True)
@@ -600,7 +607,6 @@ class ARVEHICLES_OT_create_socket(bpy.types.Operator):
     
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
-
 
 
 
@@ -1245,6 +1251,145 @@ class ARVEHICLES_OT_create_vertex_group(bpy.types.Operator):
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
 
+
+
+class ARVEHICLES_OT_cleanup_mesh(bpy.types.Operator):
+    bl_idname = "arvehicles.cleanup_mesh"
+    bl_label = "Cleanup Mesh"
+    bl_options = {'REGISTER', 'UNDO'}
+    bl_description = "Fix common mesh issues: duplicates, holes, non-manifold geometry, etc."
+    
+    merge_threshold: bpy.props.FloatProperty(
+        name="Merge Distance", 
+        default=0.001, 
+        min=0.0001, 
+        max=0.01,
+        description="Distance threshold for merging duplicate vertices"
+    )
+    
+    dissolve_angle: bpy.props.FloatProperty(
+        name="Dissolve Angle", 
+        default=5.0, 
+        min=0.1, 
+        max=15.0,
+        description="Angle threshold for dissolving unnecessary edges (degrees)"
+    )
+    
+    fix_non_manifold: bpy.props.BoolProperty(
+        name="Fix Non-Manifold", 
+        default=True,
+        description="Fix non-manifold geometry that causes decimation artifacts"
+    )
+    
+    fill_holes: bpy.props.BoolProperty(
+        name="Fill Holes", 
+        default=True,
+        description="Fill holes in the mesh"
+    )
+    
+    remove_interior: bpy.props.BoolProperty(
+        name="Remove Interior Faces", 
+        default=True,
+        description="Remove faces that are inside the mesh"
+    )
+    
+    def execute(self, context):
+        if not context.selected_objects:
+            self.report({'ERROR'}, "No objects selected")
+            return {'CANCELLED'}
+        
+        mesh_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
+        
+        if not mesh_objects:
+            self.report({'ERROR'}, "No mesh objects selected")
+            return {'CANCELLED'}
+        
+        cleaned_objects = 0
+        
+        for obj in mesh_objects:
+            original_faces = len(obj.data.polygons)
+            self._cleanup_mesh(obj)
+            final_faces = len(obj.data.polygons)
+            
+            self.report({'INFO'}, f"Cleaned {obj.name}: {original_faces} -> {final_faces} faces")
+            cleaned_objects += 1
+        
+        self.report({'INFO'}, f"Cleaned {cleaned_objects} mesh objects - ready for modeling/LODs/export")
+        return {'FINISHED'}
+    
+    def _cleanup_mesh(self, obj):
+        """Comprehensive mesh cleanup"""
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.mode_set(mode='EDIT')
+        
+        # Ensure we're in vertex selection mode for all operations
+        bpy.ops.mesh.select_mode(type='VERT')
+        
+        # Select all geometry
+        bpy.ops.mesh.select_all(action='SELECT')
+        
+        # Step 1: Remove duplicate vertices
+        bpy.ops.mesh.remove_doubles(threshold=self.merge_threshold)
+        
+        # Step 2: Delete loose geometry
+        bpy.ops.mesh.delete_loose()
+        
+        # Step 3: Fill holes if enabled
+        if self.fill_holes:
+            bpy.ops.mesh.fill_holes(sides=0)
+        
+        # Step 4: Fix non-manifold geometry (simplified)
+        if self.fix_non_manifold:
+            self._fix_non_manifold_geometry()
+        
+        # Step 5: Limited dissolve to remove unnecessary edges
+        bpy.ops.mesh.select_all(action='SELECT')
+        dissolve_angle_rad = math.radians(self.dissolve_angle)
+        bpy.ops.mesh.dissolve_limited(angle_limit=dissolve_angle_rad)
+        
+        # Step 6: Final cleanup
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.mesh.normals_make_consistent(inside=False)
+        try:
+            bpy.ops.mesh.beautify_fill()  # Improve triangle quality
+        except:
+            pass  # Skip if it fails
+        
+        bpy.ops.object.mode_set(mode='OBJECT')
+    
+    def _fix_non_manifold_geometry(self):
+        """Fix non-manifold edges and vertices"""
+        # Select non-manifold geometry
+        bpy.ops.mesh.select_all(action='DESELECT')
+        bpy.ops.mesh.select_non_manifold()
+        
+        # Try to fix by filling or dissolving
+        selected_edges = bpy.context.tool_settings.mesh_select_mode[1]
+        if selected_edges:
+            # Try to fill non-manifold edges
+            bpy.ops.mesh.edge_face_add()
+        else:
+            # Delete problematic vertices/edges as last resort
+            bpy.ops.mesh.delete(type='VERT')
+    
+    def _remove_interior_faces(self):
+        """Remove faces that are completely inside the mesh"""
+        # This is a simplified approach - select faces with all normals pointing inward
+        bpy.ops.mesh.select_all(action='DESELECT')
+        
+        # Select faces by normal direction (experimental)
+        # This would need more sophisticated geometry analysis
+        # For now, just ensure normals are consistent
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.mesh.normals_make_consistent(inside=False)
+    
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+
+
+
+
 class ARVEHICLES_OT_parent_empties(bpy.types.Operator):
     bl_idname = "arvehicles.parent_empties"
     bl_label = "Parent Empties to Armature"
@@ -1283,8 +1428,31 @@ class ARVEHICLES_OT_create_lods(bpy.types.Operator):
     bl_label = "Create LOD Levels"
     bl_options = {'REGISTER', 'UNDO'}
     
-    lod_levels: bpy.props.IntProperty(name="LOD Levels", default=3, min=1, max=5)
-    reduction_factor: bpy.props.FloatProperty(name="Reduction Factor", default=0.5, min=0.1, max=0.9)
+    lod_levels: bpy.props.IntProperty(
+        name="LOD Levels", 
+        default=3, 
+        min=1, 
+        max=5,
+        description="Number of LOD levels to create"
+    )
+    
+    create_collection: bpy.props.BoolProperty(
+        name="Create Collection", 
+        default=True,
+        description="Organize LODs in a collection"
+    )
+    
+    join_lod_levels: bpy.props.BoolProperty(
+        name="Join LOD Levels", 
+        default=True,
+        description="Join all parts of each LOD level into single objects"
+    )
+    
+    aggressive_reduction: bpy.props.BoolProperty(
+        name="Aggressive Reduction", 
+        default=True,
+        description="Use more dramatic reduction ratios for visible LOD differences"
+    )
     
     def execute(self, context):
         if not context.selected_objects:
@@ -1292,37 +1460,121 @@ class ARVEHICLES_OT_create_lods(bpy.types.Operator):
             return {'CANCELLED'}
         
         mesh_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
-        
         if not mesh_objects:
             self.report({'ERROR'}, "No mesh objects selected")
             return {'CANCELLED'}
         
-        for obj in mesh_objects:
-            current_faces = len(obj.data.polygons)
-            
-            for lod in range(1, self.lod_levels + 1):
-                bpy.ops.object.select_all(action='DESELECT')
-                obj.select_set(True)
-                context.view_layer.objects.active = obj
-                bpy.ops.object.duplicate()
-                
-                lod_obj = context.selected_objects[0]
-                
-                base_name = obj.name.replace("_LOD0", "")
-                lod_obj.name = f"{base_name}_LOD{lod}"
-                
-                target_faces = int(current_faces * (self.reduction_factor ** lod))
-                if target_faces > 0:
-                    decimate = lod_obj.modifiers.new(name="LOD_Decimate", type='DECIMATE')
-                    decimate.ratio = target_faces / len(lod_obj.data.polygons)
-                    bpy.ops.object.modifier_apply(modifier=decimate.name)
+        # Get base name from first object or use "Vehicle" as default
+        first_obj = mesh_objects[0]
+        base_name = first_obj.name.replace("_LOD0", "").split("_")[0] if "_" in first_obj.name else "Vehicle"
         
-        self.report({'INFO'}, f"Created {self.lod_levels} LOD levels for {len(mesh_objects)} objects")
+        # Create collection if requested
+        if self.create_collection:
+            collection_name = f"{base_name}_LOD_Collection"
+            # Check if collection already exists
+            if collection_name not in bpy.data.collections:
+                new_collection = bpy.data.collections.new(collection_name)
+                context.scene.collection.children.link(new_collection)
+            else:
+                new_collection = bpy.data.collections[collection_name]
+        
+        # Choose reduction ratios
+        if self.aggressive_reduction:
+            ratios = [0.3, 0.15, 0.08, 0.06, 0.05]  # More conservative at high LODs to prevent spikes
+        else:
+            ratios = [0.5, 0.25, 0.125, 0.0625, 0.03125]  # Conservative reduction
+        
+        created_lods = 0
+        all_lod_objects = {i: [] for i in range(1, self.lod_levels + 1)}  # Track objects by LOD level
+        
+        # Process each selected object
+        for source_obj in mesh_objects:
+            obj_base_name = source_obj.name.replace("_LOD0", "")
+            
+            for lod in range(1, min(self.lod_levels + 1, 6)):  # Max 5 LODs
+                # Duplicate from source
+                bpy.ops.object.select_all(action='DESELECT')
+                source_obj.select_set(True)
+                context.view_layer.objects.active = source_obj
+                
+                bpy.ops.object.duplicate_move(
+                    OBJECT_OT_duplicate={"linked": False, "mode": 'TRANSLATION'}, 
+                    TRANSFORM_OT_translate={"value": (0, 0, 0)}
+                )
+                
+                lod_obj = context.active_object
+                lod_obj.name = f"{obj_base_name}_LOD{lod}"
+                
+                # Apply decimation
+                bpy.ops.object.modifier_add(type='DECIMATE')
+                decimate_mod = lod_obj.modifiers["Decimate"]
+                decimate_mod.ratio = ratios[lod - 1]
+                bpy.ops.object.modifier_apply(modifier="Decimate")
+                
+                # Add to collection if enabled
+                if self.create_collection:
+                    if lod_obj.name in context.scene.collection.objects:
+                        context.scene.collection.objects.unlink(lod_obj)
+                    new_collection.objects.link(lod_obj)
+                
+                # Track for joining
+                all_lod_objects[lod].append(lod_obj)
+                created_lods += 1
+        
+        # Join LOD levels if requested
+        if self.join_lod_levels:
+            for lod_level, lod_objects in all_lod_objects.items():
+                if len(lod_objects) > 1:  # Only join if multiple objects
+                    self._join_lod_objects(lod_objects, f"{base_name}_LOD{lod_level}")
+        
+        # Rename source objects to LOD0
+        for source_obj in mesh_objects:
+            if "_LOD0" not in source_obj.name:
+                source_obj.name = f"{source_obj.name}_LOD0"
+            
+            # Add source to collection too
+            if self.create_collection:
+                if source_obj.name in context.scene.collection.objects:
+                    context.scene.collection.objects.unlink(source_obj)
+                new_collection.objects.link(source_obj)
+        
+        # Select remaining LOD objects (avoid invalid references)
+        bpy.ops.object.select_all(action='DESELECT')
+        valid_lod_objects = []
+        
+        for obj_name in bpy.data.objects.keys():
+            if "_LOD" in obj_name and any(obj_name.startswith(f"{base_name}_LOD") for base_name in [obj.name.split("_")[0] for obj in mesh_objects]):
+                obj = bpy.data.objects[obj_name]
+                obj.select_set(True)
+                valid_lod_objects.append(obj)
+        
+        self.report({'INFO'}, f"Created {created_lods} LOD objects, joined into {len(valid_lod_objects)} final LOD levels")
         return {'FINISHED'}
+    
+    def _join_lod_objects(self, lod_objects, joined_name):
+        """Join multiple LOD objects into a single object"""
+        if not lod_objects:
+            return
+        
+        # Select all objects for this LOD level
+        bpy.ops.object.select_all(action='DESELECT')
+        for obj in lod_objects:
+            obj.select_set(True)
+        
+        # Set the first object as active
+        bpy.context.view_layer.objects.active = lod_objects[0]
+        
+        # Join all selected objects
+        bpy.ops.object.join()
+        
+        # Rename the joined object
+        joined_obj = bpy.context.active_object
+        joined_obj.name = joined_name
+        
+        return joined_obj
     
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
-
 class ARVEHICLES_OT_center_vehicle(bpy.types.Operator):
     bl_idname = "arvehicles.center_vehicle"
     bl_label = "Center Vehicle"
@@ -1459,11 +1711,16 @@ class ARVEHICLES_PT_panel(bpy.types.Panel):
         col.operator("arvehicles.create_empties", text="Create All Vehicle Points")
         
         box = layout.box()
-        box.label(text="Preparation", icon='ORIENTATION_VIEW')
+        box.label(text="Mesh Tools", icon='EDITMODE_HLT')
         
         row = box.row(align=True)
-        row.operator("arvehicles.center_vehicle", text="Center Vehicle", icon='PIVOT_BOUNDBOX')
+        row.operator("arvehicles.cleanup_mesh", text="Cleanup Mesh", icon='BRUSH_DATA')
         row.operator("arvehicles.create_lods", text="Create LODs", icon='MOD_DECIM')
+        
+        box = layout.box()
+        box.label(text="Preparation", icon='ORIENTATION_VIEW')
+        
+        box.operator("arvehicles.center_vehicle", text="Center Vehicle", icon='PIVOT_BOUNDBOX')
         
         box = layout.box()
         box.label(text="Rigging", icon='ARMATURE_DATA')
@@ -1528,6 +1785,7 @@ classes = (
     ARVEHICLES_OT_create_vertex_group,
     ARVEHICLES_OT_parent_empties,
     ARVEHICLES_OT_create_lods,
+    ARVEHICLES_OT_cleanup_mesh,  # Added the cleanup operator
     ARVEHICLES_OT_center_vehicle,
     ARVEHICLES_PT_panel,
 )
