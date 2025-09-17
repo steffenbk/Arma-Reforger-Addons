@@ -1559,19 +1559,19 @@ class ARVEHICLES_OT_cleanup_mesh(bpy.types.Operator):
     
     fix_non_manifold: bpy.props.BoolProperty(
         name="Fix Non-Manifold", 
-        default=True,
+        default=False,
         description="Fix non-manifold geometry that causes decimation artifacts"
     )
     
     fill_holes: bpy.props.BoolProperty(
         name="Fill Holes", 
-        default=True,
+        default=False,
         description="Fill holes in the mesh"
     )
     
     remove_interior: bpy.props.BoolProperty(
         name="Remove Interior Faces", 
-        default=True,
+        default=False,
         description="Remove faces that are inside the mesh"
     )
     
