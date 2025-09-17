@@ -547,7 +547,7 @@ class ARVEHICLES_OT_create_socket(bpy.types.Operator):
     custom_name: bpy.props.StringProperty(name="Custom Name", default="")
     parent_to_armature: bpy.props.BoolProperty(
         name="Parent to Armature", 
-        default=False,
+        default=True,  # Changed to True by default
         description="Automatically parent socket to vehicle armature"
     )
     
@@ -586,17 +586,24 @@ class ARVEHICLES_OT_create_socket(bpy.types.Operator):
         socket["socket_type"] = self.socket_type
         socket["vehicle_part"] = "attachment_point"
         
-        # Only parent to armature if explicitly requested
+        # Parent to armature if requested
         if self.parent_to_armature:
             armature = None
+            # Look for any armature, not just "VehicleArmature"
             for obj in bpy.data.objects:
-                if obj.type == 'ARMATURE' and "VehicleArmature" in obj.name:
+                if obj.type == 'ARMATURE':
                     armature = obj
                     break
             
             if armature:
                 socket.parent = armature
                 self.report({'INFO'}, f"Socket parented to armature '{armature.name}'")
+            else:
+                self.report({'WARNING'}, "No armature found to parent socket to")
+        
+        # Fix context error - ensure we're in object mode before selecting
+        if context.mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode='OBJECT')
         
         bpy.ops.object.select_all(action='DESELECT')
         socket.select_set(True)
@@ -607,7 +614,6 @@ class ARVEHICLES_OT_create_socket(bpy.types.Operator):
     
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
-
 
 
 class ARVEHICLES_OT_separate_components(bpy.types.Operator):
@@ -1689,12 +1695,13 @@ class ARVEHICLES_PT_panel(bpy.types.Panel):
         row = col.row(align=True)
         op = row.operator("arvehicles.create_socket", text="Mirror")
         op.socket_type = 'mirror'
-        op = row.operator("arvehicles.create_socket", text="Custom")
+        op = row.operator("arvehicles.create_empties", text="Create All Vehicle Points")
+        
+        col.separator()
+        
+        op = col.operator("arvehicles.create_socket", text="Custom")
         op.socket_type = 'custom'
                 
-        col.separator()
-        col.operator("arvehicles.create_empties", text="Create All Vehicle Points")
-        
         box = layout.box()
         box.label(text="Mesh Tools", icon='EDITMODE_HLT')
         
