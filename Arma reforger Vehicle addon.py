@@ -1220,7 +1220,7 @@ class ARVEHICLES_OT_create_armature(bpy.types.Operator):
         bpy.ops.object.mode_set(mode='OBJECT')
         
         # Set display properties for easier bone visibility
-        armature_data.display_type = 'STICK'
+        armature_data.display_type = 'OCTAHEDRAL'
         armature_data.show_names = True
         armature_obj.show_in_front = True
         
