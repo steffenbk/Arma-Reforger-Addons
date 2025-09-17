@@ -1,19 +1,17 @@
 bl_info = {
-    "name": "Arma Reforger Weapon Tools",
-    "author": "Your Name",
-    "version": (1, 4),
+    "name": "Arma Reforger Weapon Tools Enhanced",
+    "author": "steffen",
+    "version": (2, 0),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > AR Weapons",
-    "description": "Tools for scaling and rigging weapons for Arma Reforger - Official Documentation Compliant",
-    "warning": "",
-    "doc_url": "",
+    "description": "Enhanced tools for preparing and rigging weapons for Arma Reforger",
     "category": "Object",
 }
 
 import bpy
+import bmesh
 import math
 from mathutils import Vector, Matrix
-import bmesh
 
 # Standard dimensions for Arma Reforger weapons
 STANDARD_WEAPON_LENGTH = 0.7  # From barrel_muzzle to back of weapon
@@ -21,190 +19,374 @@ STANDARD_WEAPON_HEIGHT = 0.25  # From bottom to top
 STANDARD_WEAPON_WIDTH = 0.07   # Width of weapon (X axis)
 STANDARD_BARREL_HEIGHT = 0.062  # Height of barrel from ground
 
-# Default locations for empty objects - Updated with official Arma Reforger slots
-EMPTY_LOCATIONS = {
-    # Official weapon attachment slots
-    "slot_magazine": (0, 0, -0.06),
-    "slot_optics": (0, 0.1, 0.09),
-    "slot_barrel_muzzle": (0, 0.35, 0.065),
-    "slot_underbarrel": (0, 0.2, -0.03),
-    "slot_bayonet": (0, 0.32, 0.065),
-    "slot_flashlight": (0.02, 0.25, 0.05),
-    
-    # Hand IK points
-    "snap_hand_right": (0.03, 0, 0.02),
-    "snap_hand_left": (-0.03, 0.15, 0.02),
-    
-    # Simulation points (used by components)
-    "eye": (0, 0.1, 0.085),
-    "barrel_chamber": (0, -0.1, 0.065),
-    "barrel_muzzle": (0, 0.35, 0.065),
-    
-    # Legacy slot names (for backward compatibility)
-    "slot_ironsight_front": (0, 0.3, 0.085),
-    "slot_ironsight_rear": (0, 0.15, 0.085),
-}
-
-SOCKET_NAMES = {
-    "slot_magazine": "slot_magazine",
-    "slot_optics": "slot_optics", 
-    "slot_barrel_muzzle": "slot_barrel_muzzle",
-    "slot_underbarrel": "slot_underbarrel",
-    "slot_bayonet": "slot_bayonet",
-    "slot_flashlight": "slot_flashlight",
-    "eye": "eye",
-    "barrel_chamber": "barrel_chamber",
-    "barrel_muzzle": "barrel_muzzle"
-}
-
-# Socket types for weapons - Updated with official Arma Reforger slots
-SOCKET_TYPES = [
+WEAPON_SOCKET_TYPES = [
     ('slot_magazine', "Magazine Well", "Magazine attachment slot"),
-    ('slot_optics', "Optics Mount", "Optics attachment slot (non-standard rail)"),
-    ('slot_barrel_muzzle', "Muzzle", "Muzzle attachment slot (suppressors, compensators)"),
-    ('slot_underbarrel', "Underbarrel", "Underbarrel attachment slot (UGL, grip)"),
+    ('slot_optics', "Optics Mount", "Optics attachment slot"),
+    ('slot_barrel_muzzle', "Muzzle", "Muzzle attachment slot"),
+    ('slot_underbarrel', "Underbarrel", "Underbarrel attachment slot"),
     ('slot_bayonet', "Bayonet Mount", "Bayonet attachment slot"),
     ('slot_flashlight', "Flashlight", "Flashlight attachment slot"),
-    ('eye', "Eye (Aiming)", "Aiming down sight point"),
+    ('snap_hand_right', "Hand Right", "Right hand IK target"),
+    ('snap_hand_left', "Hand Left", "Left hand IK target"),
+    ('eye', "Eye Point", "Aiming down sight point"),
     ('barrel_chamber', "Barrel Chamber", "Barrel chamber position"),
     ('barrel_muzzle', "Barrel Muzzle", "Barrel muzzle direction"),
+    ('custom', "Custom", "Custom socket type"),
 ]
 
-class CREATE_SOCKET_OT_create_socket(bpy.types.Operator):
-    """Create a weapon attachment socket at selected face or object location"""
-    bl_idname = "object.create_weapon_socket"
-    bl_label = "Create Weapon Socket"
+WEAPON_COMPONENT_TYPES = [
+    ('sight', "Sight", "Sight component"),
+    ('light', "Light", "Light component"),
+    ('trigger', "Trigger", "Trigger component"),
+    ('bolt', "Bolt", "Bolt component"),
+    ('charging_handle', "Charging Handle", "Charging handle component"),
+    ('mag_release', "Magazine Release", "Magazine release component"),
+    ('safety', "Safety", "Safety component"),
+    ('fire_mode', "Fire Mode", "Fire mode selector component"),
+    ('hammer', "Hammer", "Hammer component"),
+    ('striker', "Striker", "Striker component"),
+    ('slide', "Slide", "Slide component"),
+    ('barrel', "Barrel", "Barrel component"),
+    ('buttstock', "Buttstock", "Buttstock component"),
+    ('ejection_port', "Ejection Port", "Ejection port component"),
+    ('bipod', "Bipod", "Bipod component"),
+    ('accessory', "Accessory", "Accessory component"),
+    ('custom', "Custom", "Custom component type"),
+]
+
+WEAPON_BONE_TYPES = [
+    ('w_root', "Root Bone", "Main weapon bone"),
+    ('w_fire_mode', "Fire Mode", "Fire selector bone"),
+    ('w_ch_handle', "Charging Handle", "Charging handle bone"),
+    ('w_trigger', "Trigger", "Trigger bone"),
+    ('w_bolt', "Bolt", "Bolt/slide bone"),
+    ('w_mag_release', "Mag Release", "Magazine release bone"),
+    ('w_safety', "Safety", "Safety lever bone"),
+    ('w_buttstock', "Buttstock", "Buttstock bone"),
+    ('w_ejection_port', "Ejection Port", "Ejection port bone"),
+    ('w_bolt_release', "Bolt Release", "Bolt release bone"),
+    ('w_slide', "Slide", "Slide bone (pistols)"),
+    ('w_hammer', "Hammer", "Hammer bone"),
+    ('w_striker', "Striker", "Striker bone"),
+    ('w_cylinder', "Cylinder", "Cylinder bone (revolvers)"),
+    ('w_rear_sight', "Rear Sight", "Rear sight bone"),
+    ('w_front_sight', "Front Sight", "Front sight bone"),
+    ('w_barrel', "Barrel", "Barrel bone"),
+    ('w_bipodleg', "Bipod Leg", "Bipod leg bone"),
+    ('w_bipodleg_left', "Bipod Left", "Left bipod leg bone"),
+    ('w_bipodleg_right', "Bipod Right", "Right bipod leg bone"),
+    ('w_fire_hammer', "Fire Hammer", "Fire hammer bone"),
+    ('w_sight', "Sight", "Sight bone"),
+    ('w_sight_slider', "Sight Slider", "Sight slider bone"),
+    ('custom', "Custom Bone", "Add a custom bone"),
+]
+
+class ARWEAPONS_OT_create_ucx_collision(bpy.types.Operator):
+    bl_idname = "arweapons.create_ucx_collision"
+    bl_label = "Create UCX Collision"
     bl_options = {'REGISTER', 'UNDO'}
     
-    socket_type: bpy.props.EnumProperty(
-        name="Socket Type",
-        description="Type of weapon socket to create",
-        items=SOCKET_TYPES,
-        default='slot_barrel_muzzle'
+    method: bpy.props.EnumProperty(
+        name="Method",
+        items=[
+            ('UCX', "Convex", "UCX convex collision"),
+            ('UCL', "Cylinder", "UCL cylinder collision"),
+            ('UBX', "Box", "UBX box collision"),
+            ('USP', "Sphere", "USP sphere collision"),
+        ],
+        default='UCX'
     )
     
-    custom_name: bpy.props.StringProperty(
-        name="Custom Name",
-        description="Custom name for the socket (leave blank for auto-naming)",
-        default=""
-    )
-    
-    snap_to_face: bpy.props.BoolProperty(
-        name="Snap to Face",
-        description="Snap socket to the selected face (if in edit mode)",
-        default=True
-    )
-    
-    align_to_normal: bpy.props.BoolProperty(
-        name="Align to Normal",
-        description="Align socket with the face normal",
-        default=True
+    target_faces: bpy.props.IntProperty(
+        name="Target Faces", 
+        default=30, 
+        min=12, 
+        max=100,
+        description="Target face count for UCX collisions"
     )
     
     def execute(self, context):
-        # Get the active object
-        obj = context.active_object
-        
-        if not obj:
-            self.report({'ERROR'}, "No active object selected")
+        if not context.selected_objects:
+            self.report({'ERROR'}, "No objects selected")
             return {'CANCELLED'}
         
-        # Save current mode to restore it later
-        current_mode = context.mode
+        mesh_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
+        if not mesh_objects:
+            self.report({'ERROR'}, "No mesh objects selected")
+            return {'CANCELLED'}
         
-        # Generate socket name
-        if self.custom_name:
-            socket_name = self.custom_name
+        collision_objects = []
+        
+        for idx, source_obj in enumerate(mesh_objects):
+            collision_obj = self._create_collision(source_obj, idx, len(mesh_objects))
+            if collision_obj:
+                collision_objects.append(collision_obj)
+        
+        # Select all created collisions
+        bpy.ops.object.select_all(action='DESELECT')
+        for obj in collision_objects:
+            obj.select_set(True)
+        
+        if collision_objects:
+            context.view_layer.objects.active = collision_objects[0]
+        
+        self.report({'INFO'}, f"Created {len(collision_objects)} {self.method} collision(s)")
+        return {'FINISHED'}
+    
+    def _create_collision(self, source_obj, idx, total_objects):
+        """Create collision based on selected method"""
+        # Generate proper name
+        if total_objects == 1:
+            name = f"{self.method}_weapon"
         else:
-            socket_name = f"{SOCKET_NAMES[self.socket_type]}_{len([o for o in bpy.data.objects if SOCKET_NAMES[self.socket_type] in o.name]) + 1}"
+            name = f"{self.method}_weapon_part_{idx:02d}"
         
-        # Create socket empty
-        socket = bpy.data.objects.new(socket_name, None)
-        socket.empty_display_type = 'PLAIN_AXES'
-        socket.empty_display_size = 0.05  # Smaller size for weapon sockets
+        if self.method == 'UCX':
+            return self._create_ucx_collision(source_obj, name)
+        else:
+            return self._create_primitive_collision(source_obj, name)
+    
+    def _create_ucx_collision(self, source_obj, name):
+        """Create UCX convex collision with proper cleanup"""
+        bpy.ops.object.select_all(action='DESELECT')
+        source_obj.select_set(True)
+        bpy.context.view_layer.objects.active = source_obj
         
-        # Default location is at the object's location
-        socket_location = obj.location.copy()
-        socket_rotation = (0, 0, 0)
+        # Duplicate source
+        bpy.ops.object.duplicate()
+        collision_obj = bpy.context.active_object
+        collision_obj.name = name
         
-        # If in edit mode, snap to the selected face
-        if current_mode == 'EDIT_MESH' and self.snap_to_face:
-            mesh = obj.data
-            bm = bmesh.from_edit_mesh(mesh)
-            selected_faces = [f for f in bm.faces if f.select]
+        # Simplify before convex hull
+        face_count = len(collision_obj.data.polygons)
+        if face_count > self.target_faces * 2:
+            # Heavy reduction for very complex meshes
+            self._apply_decimation(collision_obj, max(0.1, (self.target_faces * 2) / face_count))
+        
+        # Create convex hull
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.mesh.convex_hull()
+        bpy.ops.object.mode_set(mode='OBJECT')
+        
+        # Final optimization
+        face_count = len(collision_obj.data.polygons)
+        if face_count > self.target_faces:
+            self._apply_decimation(collision_obj, max(0.7, self.target_faces / face_count))
+        
+        # Critical cleanup for non-planar faces
+        self._fix_non_planar_faces(collision_obj)
+        
+        # Apply collision properties
+        self._apply_collision_properties(collision_obj)
+        
+        return collision_obj
+    
+    def _create_primitive_collision(self, source_obj, name):
+        """Create primitive collision (UCL, UBX, USP)"""
+        # Get bounding box info
+        bbox_center = sum((source_obj.matrix_world @ Vector(corner) for corner in source_obj.bound_box), Vector()) / 8
+        dims = source_obj.dimensions
+        
+        bpy.ops.object.select_all(action='DESELECT')
+        
+        # Create appropriate primitive
+        if self.method == 'UCL':
+            # Cylinder - align to longest axis
+            max_dim_idx = dims[:].index(max(dims))
+            radius = max([dims[i] for i in range(3) if i != max_dim_idx]) / 2
+            depth = dims[max_dim_idx]
             
-            if selected_faces:
-                # Get the active face
-                active_face = selected_faces[0]
+            if max_dim_idx == 0:  # X longest
+                bpy.ops.mesh.primitive_cylinder_add(radius=radius, depth=depth, 
+                                                  location=bbox_center, rotation=(0, 1.5708, 0))
+            elif max_dim_idx == 1:  # Y longest
+                bpy.ops.mesh.primitive_cylinder_add(radius=radius, depth=depth, 
+                                                  location=bbox_center, rotation=(1.5708, 0, 0))
+            else:  # Z longest
+                bpy.ops.mesh.primitive_cylinder_add(radius=radius, depth=depth, location=bbox_center)
                 
-                # Calculate face center
-                face_center = active_face.calc_center_median()
-                socket_location = obj.matrix_world @ face_center
+        elif self.method == 'UBX':
+            # Box
+            bpy.ops.mesh.primitive_cube_add(location=bbox_center)
+            collision_obj = bpy.context.active_object
+            collision_obj.scale = dims
+            
+        elif self.method == 'USP':
+            # Sphere
+            radius = max(dims) / 2
+            bpy.ops.mesh.primitive_uv_sphere_add(radius=radius, location=bbox_center)
+        
+        collision_obj = bpy.context.active_object
+        collision_obj.name = name
+        
+        # Apply transforms
+        bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+        
+        # Set origin to geometry center
+        bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY')
+        
+        # Apply collision properties
+        self._apply_collision_properties(collision_obj)
+        
+        return collision_obj
+    
+    def _apply_decimation(self, obj, ratio):
+        """Apply decimation modifier"""
+        decimate = obj.modifiers.new(name="Decimate", type='DECIMATE')
+        decimate.ratio = ratio
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.modifier_apply(modifier=decimate.name)
+    
+    def _fix_non_planar_faces(self, obj):
+        """Fix non-planar faces"""
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.mode_set(mode='EDIT')
+        
+        # Select all
+        bpy.ops.mesh.select_all(action='SELECT')
+        
+        # Remove tiny edges that cause non-planar faces
+        bpy.ops.mesh.remove_doubles(threshold=0.0001)
+        
+        # Remove loose geometry
+        bpy.ops.mesh.delete_loose()
+        
+        # Force all faces to be triangular
+        bpy.ops.mesh.quads_convert_to_tris(quad_method='FIXED', ngon_method='BEAUTY')
+        
+        # Recalculate normals
+        bpy.ops.mesh.normals_make_consistent(inside=False)
+        
+        bpy.ops.object.mode_set(mode='OBJECT')
+        
+        # Apply rotation and scale
+        bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+    
+    def _apply_collision_properties(self, obj):
+        """Apply proper collision properties"""
+        # Create collision material
+        if "Collision_Material" not in bpy.data.materials:
+            mat = bpy.data.materials.new(name="Collision_Material")
+            mat.diffuse_color = (0.2, 0.8, 0.2, 0.6)  # Green semi-transparent
+            mat.use_backface_culling = False
+        else:
+            mat = bpy.data.materials["Collision_Material"]
+        
+        # Assign material
+        obj.data.materials.clear()
+        obj.data.materials.append(mat)
+        
+        # Set required properties
+        obj["usage"] = "Weapon"
+        obj["layer_preset"] = "Weapon"
+    
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+class ARWEAPONS_OT_create_firegeo_collision(bpy.types.Operator):
+    bl_idname = "arweapons.create_firegeo_collision"
+    bl_label = "Create FireGeo Collision"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    method: bpy.props.EnumProperty(
+        name="Method",
+        items=[
+            ('CONVEX', "Convex Hull", "Simplified convex hull"),
+            ('DETAILED', "Detailed", "Preserves shape better"),
+        ],
+        default='DETAILED'
+    )
+    target_faces: bpy.props.IntProperty(name="Target Faces", default=150, min=50, max=1000)
+    offset: bpy.props.FloatProperty(name="Offset", default=0.007, min=0.0, max=0.05)
+    
+    def execute(self, context):
+        if not context.selected_objects:
+            self.report({'ERROR'}, "No objects selected")
+            return {'CANCELLED'}
+        
+        mesh_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
+        if not mesh_objects:
+            self.report({'ERROR'}, "No mesh objects selected")
+            return {'CANCELLED'}
+        
+        collision_objects = []
+        total_faces = 0
+        
+        for idx, source_obj in enumerate(mesh_objects):
+            bpy.ops.object.select_all(action='DESELECT')
+            source_obj.select_set(True)
+            context.view_layer.objects.active = source_obj
+            
+            bpy.ops.object.duplicate()
+            dup_obj = context.selected_objects[0]
+            
+            if len(mesh_objects) == 1:
+                dup_obj.name = "UTM_weapon"
+            else:
+                dup_obj.name = f"UTM_weapon_part_{idx}"
                 
-                # Align to normal if requested
-                if self.align_to_normal:
-                    normal = active_face.normal.normalized()
-                    
-                    # Convert local normal to world space
-                    world_normal = obj.matrix_world.to_3x3() @ normal
-                    
-                    # Create rotation matrix from normal
-                    up_vector = Vector((0, 0, 1))
-                    
-                    if abs(world_normal.dot(up_vector)) > 0.99:
-                        # If normal is nearly parallel to up, use X as the rotation axis
-                        rot_axis = Vector((1, 0, 0))
-                    else:
-                        # Otherwise use the cross product
-                        rot_axis = world_normal.cross(up_vector).normalized()
-                    
-                    # Calculate the angle
-                    angle = world_normal.angle(up_vector)
-                    
-                    # Create a rotation matrix
-                    rot_mat = Matrix.Rotation(angle, 4, rot_axis)
-                    
-                    # Convert rotation matrix to euler angles
-                    socket_rotation = rot_mat.to_euler()
-        
-        # Set socket location and rotation
-        socket.location = socket_location
-        socket.rotation_euler = socket_rotation
-        
-        # Add the socket to the current collection
-        context.collection.objects.link(socket)
-        
-        # Add socket properties
-        socket["socket_type"] = self.socket_type
-        socket["weapon_part"] = "attachment_point"
-        
-        # Switch to Object mode if we're in Edit mode
-        if current_mode == 'EDIT_MESH':
+            collision_objects.append(dup_obj)
+            
+            part_target_faces = int(self.target_faces / len(mesh_objects))
+            current_faces = len(dup_obj.data.polygons)
+            
+            if current_faces > part_target_faces:
+                obj_dimensions = dup_obj.dimensions
+                is_flat = min(obj_dimensions) < max(obj_dimensions) * 0.1
+                
+                if is_flat:
+                    target_ratio = max(0.8, part_target_faces / current_faces)
+                else:
+                    target_ratio = part_target_faces / current_faces
+                
+                if target_ratio < 1.0:
+                    decimate = dup_obj.modifiers.new(name="Decimate", type='DECIMATE')
+                    decimate.ratio = max(0.1, target_ratio)
+                    bpy.ops.object.modifier_apply(modifier=decimate.name)
+            
+            if self.offset > 0:
+                solidify = dup_obj.modifiers.new(name="Solidify", type='SOLIDIFY')
+                solidify.thickness = self.offset
+                solidify.offset = 1.0
+                bpy.ops.object.modifier_apply(modifier=solidify.name)
+            
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.mesh.select_all(action='SELECT')
+            obj_dimensions = dup_obj.dimensions
+            is_flat = min(obj_dimensions) < max(obj_dimensions) * 0.1
+            merge_threshold = 0.0001 if is_flat else 0.001
+            bpy.ops.mesh.remove_doubles(threshold=merge_threshold)
             bpy.ops.object.mode_set(mode='OBJECT')
             
-        # Now we can safely select objects
-        for obj in context.selected_objects:
-            obj.select_set(False)
-        
-        socket.select_set(True)
-        context.view_layer.objects.active = socket
-        
-        # Restore previous mode if needed
-        if current_mode == 'EDIT_MESH':
-            if obj and obj.type == 'MESH':
-                context.view_layer.objects.active = obj
-                bpy.ops.object.mode_set(mode='EDIT')
+            if "FireGeo_Material" not in bpy.data.materials:
+                mat = bpy.data.materials.new(name="FireGeo_Material")
+                mat.diffuse_color = (0.0, 0.8, 0.0, 0.5)
             else:
-                self.report({'WARNING'}, "Couldn't restore edit mode, original object no longer available")
+                mat = bpy.data.materials["FireGeo_Material"]
+            
+            dup_obj.data.materials.clear()
+            dup_obj.data.materials.append(mat)
+            dup_obj["layer_preset"] = "FireGeo"
+            dup_obj["usage"] = "FireGeo"
+            
+            total_faces += len(dup_obj.data.polygons)
         
-        self.report({'INFO'}, f"Created weapon socket '{socket_name}'")
+        # Select all collision objects
+        bpy.ops.object.select_all(action='DESELECT')
+        for obj in collision_objects:
+            obj.select_set(True)
+        
+        if collision_objects:
+            context.view_layer.objects.active = collision_objects[0]
+        
+        self.report({'INFO'}, f"Created FireGeo collision with {total_faces} total faces")
         return {'FINISHED'}
     
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
 
 class ARWEAPONS_OT_center_weapon(bpy.types.Operator):
-    """Center weapon at origin and align barrel along Y+ axis"""
     bl_idname = "arweapons.center_weapon"
     bl_label = "Center Weapon"
     bl_options = {'REGISTER', 'UNDO'}
@@ -212,13 +394,13 @@ class ARWEAPONS_OT_center_weapon(bpy.types.Operator):
     align_barrel: bpy.props.BoolProperty(
         name="Align Barrel to Y+",
         description="Rotate weapon so barrel points along Y+ axis",
-        default=False
+        default=True
     )
     
     adjust_height: bpy.props.BoolProperty(
         name="Set Standard Barrel Height",
         description="Position weapon at standard barrel height for Arma Reforger",
-        default=False
+        default=True
     )
     
     def execute(self, context):
@@ -226,7 +408,6 @@ class ARWEAPONS_OT_center_weapon(bpy.types.Operator):
             self.report({'ERROR'}, "Please select the weapon meshes")
             return {'CANCELLED'}
         
-        # Get all selected mesh objects
         mesh_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
         
         if not mesh_objects:
@@ -302,14 +483,12 @@ class ARWEAPONS_OT_center_weapon(bpy.types.Operator):
         return context.window_manager.invoke_props_dialog(self)
 
 class ARWEAPONS_OT_scale_weapon(bpy.types.Operator):
-    """Scale weapon to match Arma Reforger standards or custom dimensions"""
     bl_idname = "arweapons.scale_weapon"
     bl_label = "Scale Weapon"
     bl_options = {'REGISTER', 'UNDO'}
     
     scale_method: bpy.props.EnumProperty(
         name="Scaling Method",
-        description="How to determine the scaling factor",
         items=[
             ('standard', "Arma Standard", "Scale to standard Arma Reforger weapon dimensions"),
             ('testing', "3m Testing Scale", "Scale to 3 meters for easy testing and adjustment"),
@@ -318,10 +497,8 @@ class ARWEAPONS_OT_scale_weapon(bpy.types.Operator):
         default='testing'
     )
     
-    # Custom real-world dimensions (in meters)
     custom_length: bpy.props.FloatProperty(
         name="Real Length (m)",
-        description="Real-world weapon length in meters",
         default=0.9,
         min=0.1,
         max=3.0,
@@ -330,7 +507,6 @@ class ARWEAPONS_OT_scale_weapon(bpy.types.Operator):
     
     custom_height: bpy.props.FloatProperty(
         name="Real Height (m)",
-        description="Real-world weapon height in meters",
         default=0.3,
         min=0.05,
         max=1.0,
@@ -339,7 +515,6 @@ class ARWEAPONS_OT_scale_weapon(bpy.types.Operator):
     
     custom_width: bpy.props.FloatProperty(
         name="Real Width (m)",
-        description="Real-world weapon width in meters",
         default=0.1,
         min=0.01,
         max=0.5,
@@ -348,13 +523,11 @@ class ARWEAPONS_OT_scale_weapon(bpy.types.Operator):
     
     preserve_proportions: bpy.props.BoolProperty(
         name="Preserve Proportions",
-        description="Use uniform scaling to preserve the weapon's proportions",
         default=True
     )
     
     center_after_scale: bpy.props.BoolProperty(
         name="Center After Scaling",
-        description="Center the weapon at origin after scaling",
         default=True
     )
     
@@ -392,7 +565,7 @@ class ARWEAPONS_OT_scale_weapon(bpy.types.Operator):
         current_height = max_z - min_z
         current_width = max_x - min_x
         
-        # Calculate the overall size (largest dimension)
+        # Calculate the overall size
         current_max_dimension = max(current_length, current_height, current_width)
         
         # Determine target dimensions
@@ -401,7 +574,6 @@ class ARWEAPONS_OT_scale_weapon(bpy.types.Operator):
             target_height = STANDARD_WEAPON_HEIGHT
             target_width = STANDARD_WEAPON_WIDTH
         elif self.scale_method == 'testing':
-            # For testing: uniform scale to 3 meters based on longest dimension
             target_scale = 3.0 / current_max_dimension if current_max_dimension > 0 else 1.0
             scale_x = scale_y = scale_z = target_scale
         else:  # custom
@@ -409,7 +581,7 @@ class ARWEAPONS_OT_scale_weapon(bpy.types.Operator):
             target_height = self.custom_height
             target_width = self.custom_width
         
-        # Calculate scaling factors (only for standard and custom methods)
+        # Calculate scaling factors
         if self.scale_method != 'testing':
             length_scale = target_length / current_length if current_length > 0 else 1.0
             height_scale = target_height / current_height if current_height > 0 else 1.0
@@ -511,932 +683,395 @@ class ARWEAPONS_OT_scale_weapon(bpy.types.Operator):
             layout.prop(self, "preserve_proportions")
         
         layout.prop(self, "center_after_scale")
-class ARWEAPONS_OT_create_lods(bpy.types.Operator):
-    """Create LOD versions of selected meshes"""
-    bl_idname = "arweapons.create_lods"
-    bl_label = "Create LOD Meshes"
+
+class ARWEAPONS_OT_create_socket(bpy.types.Operator):
+    bl_idname = "arweapons.create_socket"
+    bl_label = "Create Weapon Socket"
     bl_options = {'REGISTER', 'UNDO'}
     
-    lod_levels: bpy.props.IntProperty(
-        name="LOD Levels",
-        description="Number of LOD levels to create",
-        default=3,
-        min=1,
-        max=5
+    socket_type: bpy.props.EnumProperty(name="Socket Type", items=WEAPON_SOCKET_TYPES, default='slot_barrel_muzzle')
+    custom_name: bpy.props.StringProperty(name="Custom Name", default="")
+    parent_to_armature: bpy.props.BoolProperty(
+        name="Parent to Armature", 
+        default=True,
+        description="Automatically parent socket to weapon armature"
     )
     
-    reduction_factor: bpy.props.FloatProperty(
-        name="Reduction Factor",
-        description="How much to reduce each LOD level (0.5 = 50% fewer faces)",
-        default=0.5,
-        min=0.1,
-        max=0.9
-    )
+    def execute(self, context):
+        socket_location = (0, 0, 0)  # Default to origin
+        
+        # Check if we're in edit mode with faces selected
+        if context.mode == 'EDIT_MESH' and context.active_object and context.active_object.type == 'MESH':
+            obj = context.active_object
+            mesh = obj.data
+            
+            if mesh.total_face_sel > 0:
+                # Calculate center of selected faces
+                bm = bmesh.from_edit_mesh(mesh)
+                selected_faces = [f for f in bm.faces if f.select]
+                
+                if selected_faces:
+                    center = Vector((0, 0, 0))
+                    for face in selected_faces:
+                        center += face.calc_center_median()
+                    center /= len(selected_faces)
+                    
+                    # Transform to world space
+                    socket_location = obj.matrix_world @ center
+                    
+                    # Switch to object mode for socket creation
+                    bpy.ops.object.mode_set(mode='OBJECT')
+                else:
+                    self.report({'WARNING'}, "No faces selected, using object center")
+                    bbox_center = sum((obj.matrix_world @ Vector(corner) for corner in obj.bound_box), Vector()) / 8
+                    socket_location = bbox_center
+                    bpy.ops.object.mode_set(mode='OBJECT')
+            else:
+                self.report({'WARNING'}, "No faces selected, using object center")
+                bbox_center = sum((obj.matrix_world @ Vector(corner) for corner in obj.bound_box), Vector()) / 8
+                socket_location = bbox_center
+                bpy.ops.object.mode_set(mode='OBJECT')
+        
+        # Fallback: If a mesh object is selected in object mode, use its center
+        elif context.selected_objects:
+            mesh_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
+            if mesh_objects:
+                obj = mesh_objects[0]
+                bbox_center = sum((obj.matrix_world @ Vector(corner) for corner in obj.bound_box), Vector()) / 8
+                socket_location = bbox_center
+        
+        # Generate socket name
+        if self.custom_name:
+            socket_name = self.custom_name
+        else:
+            socket_name = f"Socket_{self.socket_type.replace('_', ' ').title().replace(' ', '_')}"
+            existing_sockets = [o for o in bpy.data.objects if socket_name in o.name]
+            if existing_sockets:
+                socket_name = f"{socket_name}_{len(existing_sockets) + 1:02d}"
+        
+        # Create socket
+        socket = bpy.data.objects.new(socket_name, None)
+        socket.empty_display_type = 'ARROWS'
+        socket.empty_display_size = 0.05
+        socket.location = socket_location
+        
+        context.collection.objects.link(socket)
+        
+        socket["socket_type"] = self.socket_type
+        socket["weapon_part"] = "attachment_point"
+        
+        # Parent to armature if requested
+        if self.parent_to_armature:
+            armature = None
+            for obj in bpy.data.objects:
+                if obj.type == 'ARMATURE':
+                    armature = obj
+                    break
+            
+            if armature:
+                socket.parent = armature
+                self.report({'INFO'}, f"Socket parented to armature '{armature.name}'")
+            else:
+                self.report({'WARNING'}, "No armature found to parent socket to")
+        
+        # Select the socket
+        bpy.ops.object.select_all(action='DESELECT')
+        socket.select_set(True)
+        context.view_layer.objects.active = socket
+        
+        self.report({'INFO'}, f"Created weapon socket '{socket_name}' at selected faces")
+        return {'FINISHED'}
+    
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+class ARWEAPONS_OT_add_to_object(bpy.types.Operator):
+    bl_idname = "arweapons.add_to_object"
+    bl_label = "Add Bone/Socket to Object"
+    bl_options = {'REGISTER', 'UNDO'}
+    bl_description = "Add bone and/or socket to existing separated object"
+    
+    # Component type (unified for both bone and socket)
+    component_type: bpy.props.EnumProperty(name="Component Type", items=WEAPON_COMPONENT_TYPES, default='trigger')
+    custom_name: bpy.props.StringProperty(name="Custom Name", default="")
+    
+    # What to create
+    add_socket: bpy.props.BoolProperty(name="Add Socket", description="Add a socket empty at the object's location", default=True)
+    add_bone: bpy.props.BoolProperty(name="Add Bone", description="Add a bone at the object's location", default=False)
+    auto_skinning: bpy.props.BoolProperty(name="Auto Skinning", description="Automatically setup skinning when adding bone", default=True)
+    
+    # Common options
+    use_object_center: bpy.props.BoolProperty(name="Use Object Center", description="Place at object center instead of origin", default=True)
+    
+    def _get_socket_type_for_component(self, component_type):
+        """Get the matching socket type for a component type"""
+        component_to_socket = {
+            'sight': 'slot_optics', 'light': 'slot_flashlight', 'trigger': 'custom',
+            'bolt': 'custom', 'charging_handle': 'custom', 'mag_release': 'custom',
+            'safety': 'custom', 'fire_mode': 'custom', 'hammer': 'custom',
+            'striker': 'custom', 'slide': 'custom', 'barrel': 'barrel_muzzle',
+            'buttstock': 'custom', 'ejection_port': 'custom', 'bipod': 'slot_underbarrel',
+            'accessory': 'custom',
+        }
+        return component_to_socket.get(component_type, 'custom')
+    
+    def _get_bone_type_for_component(self, component_type):
+        """Get the matching bone type for a component type"""
+        component_to_bone = {
+            'trigger': 'w_trigger', 'bolt': 'w_bolt', 'charging_handle': 'w_ch_handle',
+            'mag_release': 'w_mag_release', 'safety': 'w_safety', 'fire_mode': 'w_fire_mode',
+            'hammer': 'w_hammer', 'striker': 'w_striker', 'slide': 'w_slide',
+            'barrel': 'w_barrel', 'buttstock': 'w_buttstock', 'ejection_port': 'w_ejection_port',
+            'bipod': 'w_bipodleg', 'sight': 'w_sight',
+        }
+        return component_to_bone.get(component_type, 'custom')
+    
+    def _get_component_type_for_object(self, obj_name):
+        """Guess component type from object name"""
+        name_lower = obj_name.lower()
+        if 'trigger' in name_lower:
+            return 'trigger'
+        elif 'bolt' in name_lower:
+            return 'bolt'
+        elif 'charging' in name_lower or 'ch_handle' in name_lower:
+            return 'charging_handle'
+        elif 'mag' in name_lower and 'release' in name_lower:
+            return 'mag_release'
+        elif 'safety' in name_lower:
+            return 'safety'
+        elif 'sight' in name_lower:
+            return 'sight'
+        elif 'light' in name_lower:
+            return 'light'
+        elif 'barrel' in name_lower:
+            return 'barrel'
+        return 'custom'
     
     def execute(self, context):
         if not context.selected_objects:
             self.report({'ERROR'}, "No objects selected")
             return {'CANCELLED'}
         
-        mesh_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
+        target_obj = context.active_object
+        if not target_obj:
+            self.report({'ERROR'}, "No active object")
+            return {'CANCELLED'}
         
-        for obj in mesh_objects:
-            current_faces = len(obj.data.polygons)
+        # Find existing armature
+        armature = None
+        for armature_obj in bpy.data.objects:
+            if armature_obj.type == 'ARMATURE':
+                armature = armature_obj
+                break
+        
+        # Determine position (object center or origin)
+        if self.use_object_center and target_obj.type == 'MESH':
+            bbox_center = sum((target_obj.matrix_world @ Vector(corner) for corner in target_obj.bound_box), Vector()) / 8
+            location = bbox_center
+        else:
+            location = target_obj.matrix_world.translation
+        
+        bone_name = None
+        socket = None
+        
+        # Get the matching socket and bone types based on component type
+        socket_type = self._get_socket_type_for_component(self.component_type)
+        bone_type = self._get_bone_type_for_component(self.component_type)
+        
+        # Create bone if requested
+        if self.add_bone:
+            if not armature:
+                self.report({'ERROR'}, "No armature found. Create an armature first.")
+                return {'CANCELLED'}
             
-            for lod in range(1, self.lod_levels + 1):
-                # Duplicate object
-                bpy.ops.object.select_all(action='DESELECT')
-                obj.select_set(True)
-                context.view_layer.objects.active = obj
-                bpy.ops.object.duplicate()
-                
-                lod_obj = context.selected_objects[0]
-                
-                # Rename with LOD suffix
-                base_name = obj.name.replace("_LOD0", "")
-                lod_obj.name = f"{base_name}_LOD{lod}"
-                
-                # Apply decimate modifier
-                target_faces = int(current_faces * (self.reduction_factor ** lod))
-                if target_faces > 0:
-                    decimate = lod_obj.modifiers.new(name="LOD_Decimate", type='DECIMATE')
-                    decimate.ratio = target_faces / len(lod_obj.data.polygons)
-                    bpy.ops.object.modifier_apply(modifier=decimate.name)
-        
-        self.report({'INFO'}, f"Created {self.lod_levels} LOD levels for {len(mesh_objects)} objects")
-        return {'FINISHED'}
-    
-    def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self)
-
-class ARWEAPONS_OT_create_collision_box(bpy.types.Operator):
-    """Create a simplified collision box matching the weapon shape"""
-    bl_idname = "arweapons.create_collision_box"
-    bl_label = "Create UCX Collision Box"
-    bl_options = {'REGISTER', 'UNDO'}
-    
-    target_faces: bpy.props.IntProperty(
-        name="Target Faces",
-        description="Target number of faces for the collision mesh",
-        default=30,
-        min=10,
-        max=100
-    )
-    
-    padding: bpy.props.FloatProperty(
-        name="Padding",
-        description="Extra padding around weapon (in meters)",
-        default=0.005,
-        min=0.0,
-        max=0.05,
-        step=0.001
-    )
-    
-    def execute(self, context):
-        if len(context.selected_objects) == 0:
-            self.report({'ERROR'}, "Please select meshes")
-            return {'CANCELLED'}
-        
-        mesh_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
-        if not mesh_objects:
-            self.report({'ERROR'}, "No mesh objects selected")
-            return {'CANCELLED'}
-        
-        # Create collision object
-        collision_mesh = bpy.data.meshes.new("UCX_body_mesh")
-        collision_obj = bpy.data.objects.new("UCX_body", collision_mesh)
-        context.collection.objects.link(collision_obj)
-        
-        # Combine vertices from all meshes
-        all_verts = []
-        for obj in mesh_objects:
-            for vert in obj.data.vertices:
-                world_co = obj.matrix_world @ vert.co
-                all_verts.append(world_co)
-        
-        # Create temp mesh for convex hull
-        temp_mesh = bpy.data.meshes.new("temp_mesh")
-        temp_obj = bpy.data.objects.new("temp_obj", temp_mesh)
-        context.collection.objects.link(temp_obj)
-        temp_mesh.from_pydata(all_verts, [], [])
-        temp_mesh.update()
-        
-        # Create convex hull
-        bpy.ops.object.select_all(action='DESELECT')
-        temp_obj.select_set(True)
-        context.view_layer.objects.active = temp_obj
-        
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.mesh.select_all(action='SELECT')
-        bpy.ops.mesh.convex_hull()
-        bpy.ops.object.mode_set(mode='OBJECT')
-        
-        # Simplify mesh
-        decimate = temp_obj.modifiers.new(name="Decimate", type='DECIMATE')
-        current_faces = len(temp_obj.data.polygons)
-        decimate.ratio = min(1.0, self.target_faces / max(1, current_faces))
-        bpy.ops.object.modifier_apply(modifier=decimate.name)
-        
-        # Add padding if needed
-        if self.padding > 0:
-            solidify = temp_obj.modifiers.new(name="Solidify", type='SOLIDIFY')
-            solidify.thickness = self.padding
-            solidify.offset = 1.0
-            bpy.ops.object.modifier_apply(modifier=solidify.name)
-        
-        # Transfer to collision object
-        collision_obj.data = temp_obj.data.copy()
-        bpy.data.objects.remove(temp_obj)
-        
-        # Create material
-        if "UCX_Material" not in bpy.data.materials:
-            mat = bpy.data.materials.new(name="UCX_Material")
-            mat.diffuse_color = (0.1, 0.1, 0.1, 0.7)
-        else:
-            mat = bpy.data.materials["UCX_Material"]
-        
-        collision_obj.data.materials.append(mat)
-        
-        # Select the collision object
-        bpy.ops.object.select_all(action='DESELECT')
-        collision_obj.select_set(True)
-        context.view_layer.objects.active = collision_obj
-        
-        self.report({'INFO'}, f"Created UCX collision with {len(collision_obj.data.polygons)} faces")
-        return {'FINISHED'}
-    
-    def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self)
-
-class ARWEAPONS_OT_create_detailed_collision(bpy.types.Operator):
-    """Create FireGeo collision (bullet penetration) for the weapon"""
-    bl_idname = "arweapons.create_detailed_collision"
-    bl_label = "Create FireGeo Collision"
-    bl_options = {'REGISTER', 'UNDO'}
-    
-    method: bpy.props.EnumProperty(
-        name="Method",
-        description="Method to create FireGeo collision",
-        items=[
-            ('CONVEX', "Convex Hull (Stable)", "Create a simplified convex hull"),
-            ('DETAILED', "Detailed (Better Shape)", "Create a more detailed shape"),
-        ],
-        default='DETAILED'
-    )
-    
-    max_faces: bpy.props.IntProperty(
-        name="Max Faces (Convex)",
-        description="Maximum number of faces for convex hull method",
-        default=200,
-        min=20,
-        max=100000
-    )
-    
-    target_faces: bpy.props.IntProperty(
-        name="Target Faces (Detailed)",
-        description="Target number of faces for detailed method",
-        default=150,
-        min=50,
-        max=100000
-    )
-    
-    preserve_details: bpy.props.BoolProperty(
-        name="Preserve Details",
-        description="Maintain important weapon features (Detailed method only)",
-        default=True
-    )
-    
-    offset: bpy.props.FloatProperty(
-        name="Offset",
-        description="Expand the collision mesh outward by this amount (in meters)",
-        default=0.007,
-        min=0.0,
-        max=0.05,
-        step=0.001
-    )
-    
-    def execute(self, context):
-        if len(context.selected_objects) == 0:
-            self.report({'ERROR'}, "Please select at least one mesh to use as collision")
-            return {'CANCELLED'}
-        
-        mesh_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
-        
-        if not mesh_objects:
-            self.report({'ERROR'}, "No mesh objects selected")
-            return {'CANCELLED'}
-        
-        # Check for high-poly models
-        total_faces = sum(len(obj.data.polygons) for obj in mesh_objects)
-        if total_faces > 10000 and self.method == 'DETAILED':
-            self.report({'WARNING'}, f"High-poly model detected ({total_faces} faces). Consider using Convex Hull method.")
-
-        # Create collision parent
-        collision_parent = bpy.data.objects.new("UTM_weapon", None)
-        context.collection.objects.link(collision_parent)
-        
-        if self.method == 'CONVEX':
-            self._create_convex_hull(context, mesh_objects, collision_parent)
-        else:
-            self._create_detailed(context, mesh_objects, collision_parent)
-        
-        return {'FINISHED'}
-    
-    def _create_convex_hull(self, context, mesh_objects, collision_parent):
-        """Create a convex hull based FireGeo collision"""
-        
-        collision_mesh = bpy.data.meshes.new("UTM_weapon_mesh_data")
-        fire_geo_obj = bpy.data.objects.new("UTM_weapon_mesh", collision_mesh)
-        context.collection.objects.link(fire_geo_obj)
-        
-        # Get vertices from all objects
-        all_verts = []
-        for obj in mesh_objects:
-            if len(obj.data.vertices) > 100:
-                sample_rate = min(1.0, 100 / len(obj.data.vertices))
-                for i, vert in enumerate(obj.data.vertices):
-                    if i % int(1/sample_rate) == 0:
-                        world_co = obj.matrix_world @ vert.co
-                        all_verts.append(world_co)
+            # Generate bone name
+            if self.component_type == 'custom':
+                if self.custom_name:
+                    bone_name = f"w_{self.custom_name.lower().replace(' ', '_')}"
+                else:
+                    bone_name = f"w_{target_obj.name.lower().replace(' ', '_')}"
             else:
-                for vert in obj.data.vertices:
-                    world_co = obj.matrix_world @ vert.co
-                    all_verts.append(world_co)
-        
-        if len(all_verts) > 1000:
-            step = len(all_verts) // 1000
-            all_verts = all_verts[::step]
-        
-        # Create temporary mesh for convex hull
-        temp_mesh = bpy.data.meshes.new("temp_hull_mesh")
-        temp_obj = bpy.data.objects.new("temp_hull", temp_mesh)
-        context.collection.objects.link(temp_obj)
-        
-        temp_mesh.from_pydata(all_verts, [], [])
-        temp_mesh.update()
-        
-        # Create convex hull
-        bpy.ops.object.select_all(action='DESELECT')
-        temp_obj.select_set(True)
-        context.view_layer.objects.active = temp_obj
-        
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.mesh.select_all(action='SELECT')
-        bpy.ops.mesh.convex_hull()
-        bpy.ops.object.mode_set(mode='OBJECT')
-        
-        # Apply decimate if needed
-        if len(temp_obj.data.polygons) > self.max_faces:
-            decimate = temp_obj.modifiers.new(name="Decimate", type='DECIMATE')
-            decimate.ratio = self.max_faces / len(temp_obj.data.polygons)
-            bpy.ops.object.modifier_apply(modifier=decimate.name)
-        
-        # Add offset if needed
-        if self.offset > 0:
-            solidify = temp_obj.modifiers.new(name="Solidify", type='SOLIDIFY')
-            solidify.thickness = self.offset
-            solidify.offset = 1.0
-            bpy.ops.object.modifier_apply(modifier=solidify.name)
-        
-        # Transfer data to fire geo object
-        fire_geo_obj.data = temp_obj.data.copy()
-        bpy.data.objects.remove(temp_obj)
-        
-        # Create and assign material
-        if "FireGeo_Material" not in bpy.data.materials:
-            mat = bpy.data.materials.new(name="FireGeo_Material")
-            mat.diffuse_color = (0.0, 0.8, 0.0, 0.5)
-        else:
-            mat = bpy.data.materials["FireGeo_Material"]
-        
-        fire_geo_obj.data.materials.clear()
-        fire_geo_obj.data.materials.append(mat)
-        
-        # Parent to collision parent
-        fire_geo_obj.parent = collision_parent
-        
-        # Set properties
-        fire_geo_obj["layer_preset"] = "Collision_Vehicle"
-        fire_geo_obj["usage"] = "FireGeo"
-        
-        # Select new objects
-        bpy.ops.object.select_all(action='DESELECT')
-        collision_parent.select_set(True)
-        fire_geo_obj.select_set(True)
-        context.view_layer.objects.active = fire_geo_obj
-        
-        self.report({'INFO'}, f"Created FireGeo collision with {len(fire_geo_obj.data.polygons)} faces (Convex Hull method)")
-    
-    def _create_detailed(self, context, mesh_objects, collision_parent):
-        """Create a detailed FireGeo collision"""
-        
-        collision_objects = []
-        total_faces = 0
-        
-        for idx, source_obj in enumerate(mesh_objects):
-            bpy.ops.object.select_all(action='DESELECT')
-            source_obj.select_set(True)
-            context.view_layer.objects.active = source_obj
+                bone_name = bone_type
             
-            # Duplicate the object
-            bpy.ops.object.duplicate()
-            dup_obj = context.selected_objects[0]
+            # Check for duplicate bone names and increment
+            original_bone_name = bone_name
+            counter = 1
+            while bone_name in armature.data.bones:
+                bone_name = f"{original_bone_name}_{counter:02d}"
+                counter += 1
             
-            if len(mesh_objects) == 1:
-                dup_obj.name = "UTM_weapon_mesh"
-            else:
-                dup_obj.name = f"UTM_weapon_part_{idx}"
-                
-            collision_objects.append(dup_obj)
-            
-            # Simplify mesh
-            part_target_faces = int(self.target_faces / len(mesh_objects))
-            
-            if self.preserve_details and len(dup_obj.data.polygons) > part_target_faces * 2:
-                remesh = dup_obj.modifiers.new(name="Remesh", type='REMESH')
-                max_dim = max(dup_obj.dimensions)
-                remesh.voxel_size = max_dim * 0.03
-                bpy.ops.object.modifier_apply(modifier=remesh.name)
-            
-            # Apply decimate
-            decimate = dup_obj.modifiers.new(name="Decimate", type='DECIMATE')
-            current_faces = len(dup_obj.data.polygons)
-            decimate.ratio = min(1.0, part_target_faces / max(1, current_faces))
-            bpy.ops.object.modifier_apply(modifier=decimate.name)
-            
-            # Add offset if specified
-            if self.offset > 0:
-                solidify = dup_obj.modifiers.new(name="Solidify", type='SOLIDIFY')
-                solidify.thickness = self.offset
-                solidify.offset = 1.0
-                bpy.ops.object.modifier_apply(modifier=solidify.name)
-            
-            # Clean up mesh
+            # Create the bone
+            context.view_layer.objects.active = armature
             bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.mesh.select_all(action='SELECT')
-            bpy.ops.mesh.remove_doubles(threshold=0.001)
+            
+            bone = armature.data.edit_bones.new(bone_name)
+            bone.head = (location.x, location.y, location.z)
+            bone.tail = (location.x, location.y + 0.087, location.z)
+            bone.roll = 0.0
+            
+            # Parent to w_root if it exists
+            if 'w_root' in armature.data.edit_bones:
+                bone.parent = armature.data.edit_bones['w_root']
+            
             bpy.ops.object.mode_set(mode='OBJECT')
             
-            # Create material
-            if "FireGeo_Material" not in bpy.data.materials:
-                mat = bpy.data.materials.new(name="FireGeo_Material")
-                mat.diffuse_color = (0.0, 0.8, 0.0, 0.5)
+            # Set up skinning if requested
+            if self.auto_skinning:
+                bpy.ops.object.select_all(action='DESELECT')
+                target_obj.select_set(True)
+                context.view_layer.objects.active = target_obj
+                
+                # Create vertex group for the bone
+                if bone_name not in target_obj.vertex_groups:
+                    vertex_group = target_obj.vertex_groups.new(name=bone_name)
+                    
+                    # Create w_root group if it doesn't exist
+                    if bone_name != "w_root" and "w_root" not in target_obj.vertex_groups:
+                        w_root_group = target_obj.vertex_groups.new(name="w_root")
+                    
+                    # Assign all vertices to the specific bone group
+                    bpy.ops.object.mode_set(mode='EDIT')
+                    bpy.ops.mesh.select_all(action='SELECT')
+                    target_obj.vertex_groups.active = vertex_group
+                    bpy.ops.object.vertex_group_assign()
+                    bpy.ops.object.mode_set(mode='OBJECT')
+                    
+                    # Create or update armature modifier
+                    armature_mod = None
+                    for mod in target_obj.modifiers:
+                        if mod.type == 'ARMATURE':
+                            armature_mod = mod
+                            break
+                    
+                    if not armature_mod:
+                        armature_mod = target_obj.modifiers.new(name="Armature", type='ARMATURE')
+                    
+                    # Always set/update the armature object reference
+                    armature_mod.object = armature
+                    armature_mod.vertex_group = bone_name
+        
+        # Parent the object to the armature if it exists and isn't already parented
+        if armature and target_obj.parent != armature:
+            bpy.ops.object.select_all(action='DESELECT')
+            target_obj.select_set(True)
+            armature.select_set(True)
+            context.view_layer.objects.active = armature
+            bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
+        
+        # Create socket if requested
+        if self.add_socket:
+            # Generate socket name
+            if self.component_type == 'custom':
+                if self.custom_name:
+                    socket_name = f"Socket_{self.custom_name.replace(' ', '_').title()}"
+                else:
+                    socket_name = f"Socket_{target_obj.name.replace(' ', '_').title()}"
             else:
-                mat = bpy.data.materials["FireGeo_Material"]
+                socket_name = f"Socket_{socket_type.replace('_', ' ').title().replace(' ', '_')}"
+                existing_sockets = [o for o in bpy.data.objects if socket_name in o.name]
+                if existing_sockets:
+                    socket_name = f"{socket_name}_{len(existing_sockets) + 1:02d}"
             
-            dup_obj.data.materials.clear()
-            dup_obj.data.materials.append(mat)
+            # Create socket
+            socket = bpy.data.objects.new(socket_name, None)
+            socket.empty_display_type = 'ARROWS'
+            socket.empty_display_size = 0.05
+            socket.location = location
             
-            # Parent and set properties
-            dup_obj.parent = collision_parent
-            dup_obj["layer_preset"] = "Collision_Vehicle"
-            dup_obj["usage"] = "FireGeo"
+            context.collection.objects.link(socket)
             
-            total_faces += len(dup_obj.data.polygons)
+            socket["socket_type"] = socket_type
+            socket["attached_part"] = target_obj.name
+            socket["weapon_part"] = "attachment_point"
+            
+            # Parent socket to armature if it exists
+            if armature:
+                socket.parent = armature
         
-        if len(collision_objects) == 1:
-            collision_parent.name = "UTM_weapon_parent"
-        
-        # Select collision objects
+        # Select the target object again
         bpy.ops.object.select_all(action='DESELECT')
-        collision_parent.select_set(True)
-        for obj in collision_objects:
-            obj.select_set(True)
-        context.view_layer.objects.active = collision_parent
+        target_obj.select_set(True)
+        context.view_layer.objects.active = target_obj
         
-        self.report({'INFO'}, f"Created FireGeo collision with {total_faces} total faces (Detailed method)")
+        # Build report message
+        report_msg = f"Added to object '{target_obj.name}'"
+        if self.add_socket and self.add_bone:
+            report_msg += f" with socket and bone '{bone_name}'"
+        elif self.add_socket:
+            report_msg += f" with socket"
+        elif self.add_bone:
+            report_msg += f" with bone '{bone_name}'"
+        
+        if self.add_bone and self.auto_skinning:
+            report_msg += " and automatic skinning"
+        
+        self.report({'INFO'}, report_msg)
+        return {'FINISHED'}
     
     def invoke(self, context, event):
+        # Auto-guess component type from selected object name
+        if context.active_object:
+            guessed_component_type = self._get_component_type_for_object(context.active_object.name)
+            if guessed_component_type != 'custom':
+                self.component_type = guessed_component_type
+        
         return context.window_manager.invoke_props_dialog(self, width=350)
     
     def draw(self, context):
         layout = self.layout
         
-        # Count faces and show warning for high-poly models
-        mesh_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
-        total_faces = sum(len(obj.data.polygons) for obj in mesh_objects)
+        layout.prop(self, "component_type")
+        layout.prop(self, "custom_name")
         
-        if total_faces > 8000:
-            box = layout.box()
-            box.label(text=f"High-poly model detected: {total_faces} faces", icon='ERROR')
-            box.label(text="'Convex Hull' method recommended for stability")
+        layout.separator()
+        layout.prop(self, "use_object_center")
         
-        layout.prop(self, "method")
+        layout.separator()
+        layout.prop(self, "add_socket")
         
-        if self.method == 'CONVEX':
-            box = layout.box()
-            box.label(text="Convex Hull Parameters:")
-            box.prop(self, "max_faces")
-        else:
-            box = layout.box()
-            box.label(text="Detailed Parameters:")
-            box.prop(self, "target_faces")
-            box.prop(self, "preserve_details")
-            
-            if total_faces > 8000:
-                box.label(text="Warning: May crash with this model", icon='ERROR')
-        
-        layout.prop(self, "offset")
+        layout.separator()
+        layout.prop(self, "add_bone")
+        if self.add_bone:
+            layout.prop(self, "auto_skinning")
 
-class ARWEAPONS_OT_create_bone(bpy.types.Operator):
-    """Add a bone to the weapon rig"""
-    bl_idname = "arweapons.create_bone"
-    bl_label = "Add Bone"
+class ARWEAPONS_OT_separate_components(bpy.types.Operator):
+    bl_idname = "arweapons.separate_components"
+    bl_label = "Separate Weapon Components"
     bl_options = {'REGISTER', 'UNDO'}
     
-    bone_type: bpy.props.EnumProperty(
-        name="Bone Type",
-        description="Type of bone to add",
-        items=[
-            ('w_root', "Root Bone", "Main weapon bone"),
-            ('w_fire_mode', "Fire Mode", "Fire selector bone"),
-            ('w_ch_handle', "Charging Handle", "Charging handle bone (official naming)"),
-            ('w_trigger', "Trigger", "Trigger bone"),
-            ('w_bolt', "Bolt", "Bolt/slide bone"),
-            ('w_mag_release', "Mag Release", "Magazine release bone"),
-            ('w_safety', "Safety", "Safety lever bone"),
-            ('w_buttstock', "Buttstock", "Buttstock bone"),
-            ('w_ejection_port', "Ejection Port", "Ejection port bone"),
-            ('w_bolt_release', "Bolt Release", "Bolt release bone"),
-            ('w_slide', "Slide", "Slide bone (pistols)"),
-            ('w_hammer', "Hammer", "Hammer bone"),
-            ('w_striker', "Striker", "Striker bone"),
-            ('w_cylinder', "Cylinder", "Cylinder bone (revolvers)"),
-            ('w_rear_sight', "Rear Sight", "Rear sight bone"),
-            ('w_front_sight', "Front Sight", "Front sight bone"),
-            ('w_barrel', "Barrel", "Barrel bone"),
-            ('w_bipodleg', "Bipod Leg", "Bipod leg bone"),
-            ('w_bipodleg_left', "Bipod Left", "Left bipod leg bone"),
-            ('w_bipodleg_right', "Bipod Right", "Right bipod leg bone"),
-            ('custom', "Custom Bone", "Add a custom bone"),
-        ],
-        default='w_root'
-    )
+    component_type: bpy.props.EnumProperty(name="Component Type", items=WEAPON_COMPONENT_TYPES, default='trigger')
+    custom_name: bpy.props.StringProperty(name="Custom Name", default="")
     
-    custom_bone_name: bpy.props.StringProperty(
-        name="Bone Name",
-        description="Name for the custom bone",
-        default="w_custom"
-    )
+    add_socket: bpy.props.BoolProperty(name="Add Socket", description="Add a socket empty at the component's location", default=True)
+    custom_socket_name: bpy.props.StringProperty(name="Custom Socket Name", default="")
+    set_origin_to_socket: bpy.props.BoolProperty(name="Set Origin to Socket", default=True)
     
-    def invoke(self, context, event):
-        # For custom bones, always show the dialog
-        if self.bone_type == 'custom':
-            return context.window_manager.invoke_props_dialog(self, width=300)
-        else:
-            # For predefined bones, execute directly
-            return self.execute(context)
+    add_bone: bpy.props.BoolProperty(name="Add Bone", description="Add a bone at the component's location", default=False)
+    custom_bone_name: bpy.props.StringProperty(name="Custom Bone Name", default="")
+    auto_skinning: bpy.props.BoolProperty(name="Auto Skinning", description="Automatically setup skinning when adding bone", default=True)
     
-    def draw(self, context):
-        layout = self.layout
-        
-        # Only show bone type if it's custom (since predefined bones execute directly)
-        if self.bone_type == 'custom':
-            layout.prop(self, "bone_type")
-            
-            box = layout.box()
-            box.label(text="Custom Bone Properties:")
-            box.prop(self, "custom_bone_name")
+    def _get_socket_type_for_component(self, component_type):
+        """Get the matching socket type for a component type"""
+        component_to_socket = {
+            'sight': 'slot_optics', 'light': 'slot_flashlight', 'trigger': 'custom',
+            'bolt': 'custom', 'charging_handle': 'custom', 'mag_release': 'custom',
+            'safety': 'custom', 'fire_mode': 'custom', 'hammer': 'custom',
+            'striker': 'custom', 'slide': 'custom', 'barrel': 'barrel_muzzle',
+            'buttstock': 'custom', 'ejection_port': 'custom', 'bipod': 'slot_underbarrel',
+            'accessory': 'custom',
+        }
+        return component_to_socket.get(component_type, 'custom')
     
-    def execute(self, context):
-        # Find or create armature
-        armature = None
-        armature_name = "Armature"
-        
-        for obj in bpy.data.objects:
-            if obj.type == 'ARMATURE':
-                armature = obj
-                break
-        
-        if not armature and self.bone_type == 'w_root':
-            armature_data = bpy.data.armatures.new(armature_name)
-            armature = bpy.data.objects.new(armature_name, armature_data)
-            context.collection.objects.link(armature)
-            
-            # Ensure armature is at origin with proper scale (per documentation)
-            armature.location = (0, 0, 0)
-            armature.scale = (1.0, 1.0, 1.0)
-            armature.rotation_euler = (0, 0, 0)
-            
-        elif not armature:
-            self.report({'ERROR'}, "No armature found. Please create w_root first.")
-            return {'CANCELLED'}
-        
-        context.view_layer.objects.active = armature
-        bpy.ops.object.mode_set(mode='EDIT')
-        
-        bone_length = 0.087
-        
-        # Determine bone name
-        bone_name = self.bone_type
-        if self.bone_type == 'custom':
-            bone_name = self.custom_bone_name
-            
-            if bone_name in armature.data.edit_bones:
-                base_name = bone_name
-                counter = 1
-                while bone_name in armature.data.edit_bones:
-                    bone_name = f"{base_name}.{counter:03d}"
-                    counter += 1
-        
-        # Check if bone already exists (for non-custom bones)
-        elif bone_name in armature.data.edit_bones:
-            if bone_name == 'w_root':
-                self.report({'INFO'}, "w_root already exists")
-                bpy.ops.object.mode_set(mode='OBJECT')
-                return {'FINISHED'}
-            else:
-                self.report({'WARNING'}, f"{bone_name} already exists")
-                bpy.ops.object.mode_set(mode='OBJECT')
-                return {'CANCELLED'}
-        
-        # Check for root bone dependency
-        if self.bone_type != 'w_root' and 'w_root' not in armature.data.edit_bones:
-            self.report({'ERROR'}, "w_root bone not found. Please create it first.")
-            bpy.ops.object.mode_set(mode='OBJECT')
-            return {'CANCELLED'}
-        
-        # Get parent bone
-        parent_bone = None
-        if self.bone_type != 'w_root':
-            parent_bone = armature.data.edit_bones['w_root']
-        
-        # Create bones based on type with official Arma Reforger positioning
-        if self.bone_type == 'w_root':
-            bone = armature.data.edit_bones.new('w_root')
-            bone.head = (0, 0, 0)
-            bone.tail = (0, bone_length, 0)
-            bone.roll = 0.0
-            
-        elif self.bone_type == 'w_fire_mode':
-            bone = armature.data.edit_bones.new('w_fire_mode')
-            bone.head = (-0.001, -0.014, 0.025)
-            bone.tail = (-0.001, 0.073, 0.025)
-            bone.parent = parent_bone
-            
-        elif self.bone_type == 'w_ch_handle':  # Official naming
-            bone = armature.data.edit_bones.new('w_ch_handle')
-            bone.head = (-0.001, -0.086, 0.083)
-            bone.tail = (-0.001, 0.001, 0.083)
-            bone.parent = parent_bone
-            
-        elif self.bone_type == 'w_trigger':
-            bone = armature.data.edit_bones.new('w_trigger')
-            bone.head = (-0.005, 0.019, 0.012)
-            bone.tail = (-0.005, 0.106, 0.012)
-            bone.parent = parent_bone
-            
-        elif self.bone_type == 'w_bolt':
-            bone = armature.data.edit_bones.new('w_bolt')
-            bone.head = (0, -0.166, 0.065)
-            bone.tail = (0, -0.079, 0.065)
-            bone.parent = parent_bone
-            
-        elif self.bone_type == 'w_mag_release':
-            bone = armature.data.edit_bones.new('w_mag_release')
-            bone.head = (0.015, 0.019, 0.012)
-            bone.tail = (0.015, 0.106, 0.012)
-            bone.parent = parent_bone
-            
-        elif self.bone_type == 'w_safety':
-            bone = armature.data.edit_bones.new('w_safety')
-            bone.head = (0.01, -0.01, 0.02)
-            bone.tail = (0.01, 0.077, 0.02)
-            bone.parent = parent_bone
-            
-        elif self.bone_type == 'w_buttstock':
-            bone = armature.data.edit_bones.new('w_buttstock')
-            bone.head = (0, -0.3, 0.05)
-            bone.tail = (0, -0.213, 0.05)
-            bone.parent = parent_bone
-            
-        elif self.bone_type == 'w_ejection_port':
-            bone = armature.data.edit_bones.new('w_ejection_port')
-            bone.head = (0.02, -0.05, 0.065)
-            bone.tail = (0.02, 0.037, 0.065)
-            bone.parent = parent_bone
-            
-        elif self.bone_type == 'w_bolt_release':
-            bone = armature.data.edit_bones.new('w_bolt_release')
-            bone.head = (-0.01, 0.03, 0.03)
-            bone.tail = (-0.01, 0.117, 0.03)
-            bone.parent = parent_bone
-            
-        elif self.bone_type == 'w_slide':
-            bone = armature.data.edit_bones.new('w_slide')
-            bone.head = (0, -0.08, 0.065)
-            bone.tail = (0, 0.007, 0.065)
-            bone.parent = parent_bone
-            
-        elif self.bone_type == 'w_hammer':
-            bone = armature.data.edit_bones.new('w_hammer')
-            bone.head = (0, -0.04, 0.04)
-            bone.tail = (0, 0.047, 0.04)
-            bone.parent = parent_bone
-            
-        elif self.bone_type == 'w_striker':
-            bone = armature.data.edit_bones.new('w_striker')
-            bone.head = (0, -0.05, 0.065)
-            bone.tail = (0, 0.037, 0.065)
-            bone.parent = parent_bone
-            
-        elif self.bone_type == 'w_cylinder':
-            bone = armature.data.edit_bones.new('w_cylinder')
-            bone.head = (0, 0.02, 0.065)
-            bone.tail = (0, 0.107, 0.065)
-            bone.parent = parent_bone
-            
-        elif self.bone_type == 'w_rear_sight':
-            bone = armature.data.edit_bones.new('w_rear_sight')
-            bone.head = (0, 0.15, 0.09)
-            bone.tail = (0, 0.237, 0.09)
-            bone.parent = parent_bone
-            
-        elif self.bone_type == 'w_front_sight':
-            bone = armature.data.edit_bones.new('w_front_sight')
-            bone.head = (0, 0.3, 0.09)
-            bone.tail = (0, 0.387, 0.09)
-            bone.parent = parent_bone
-            
-        elif self.bone_type == 'w_barrel':
-            bone = armature.data.edit_bones.new('w_barrel')
-            bone.head = (0, 0.1, 0.065)
-            bone.tail = (0, 0.187, 0.065)
-            bone.parent = parent_bone
-            
-        elif self.bone_type == 'w_bipodleg':
-            bone = armature.data.edit_bones.new('w_bipodleg')
-            bone.head = (0, 0.2, -0.05)
-            bone.tail = (0, 0.287, -0.05)
-            bone.parent = parent_bone
-            
-        elif self.bone_type == 'w_bipodleg_left':
-            bone = armature.data.edit_bones.new('w_bipodleg_left')
-            bone.head = (-0.03, 0.2, -0.05)
-            bone.tail = (-0.03, 0.287, -0.05)
-            bone.parent = parent_bone
-            
-        elif self.bone_type == 'w_bipodleg_right':
-            bone = armature.data.edit_bones.new('w_bipodleg_right')
-            bone.head = (0.03, 0.2, -0.05)
-            bone.tail = (0.03, 0.287, -0.05)
-            bone.parent = parent_bone
-            
-        elif self.bone_type == 'custom':
-            bone = armature.data.edit_bones.new(bone_name)
-            bone.head = (0, 0, 0)
-            bone.tail = (0, bone_length, 0)
-            bone.roll = 0.0
-            if parent_bone:
-                bone.parent = parent_bone
-        
-        bpy.ops.object.mode_set(mode='OBJECT')
-        self.report({'INFO'}, f"Created {bone_name} bone")
-        return {'FINISHED'}
-
-class ARWEAPONS_OT_parent_to_armature(bpy.types.Operator):
-    """Parent selected non-mesh objects (empties, etc.) to the armature"""
-    bl_idname = "arweapons.parent_to_armature"
-    bl_label = "Parent Empties to Armature"
-    bl_options = {'REGISTER', 'UNDO'}
-    
-    def execute(self, context):
-        # Find the armature
-        armature = None
-        for obj in bpy.data.objects:
-            if obj.type == 'ARMATURE':
-                armature = obj
-                break
-        
-        if not armature:
-            self.report({'ERROR'}, "No armature found. Please create bones first.")
-            return {'CANCELLED'}
-        
-        # Get selected NON-MESH objects
-        non_mesh_objects = [obj for obj in context.selected_objects if obj.type != 'MESH']
-        
-        # Filter out mesh objects and warn user
-        mesh_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
-        if mesh_objects:
-            mesh_names = [obj.name for obj in mesh_objects[:3]]
-            if len(mesh_objects) > 3:
-                mesh_names.append(f"and {len(mesh_objects) - 3} more...")
-            self.report({'WARNING'}, f"Skipped mesh objects: {', '.join(mesh_names)}. Use 'Setup Skinning' for mesh objects instead.")
-        
-        if not non_mesh_objects:
-            self.report({'ERROR'}, "No non-mesh objects selected. This operator is for empties, curves, etc. Use 'Setup Skinning' for mesh objects.")
-            return {'CANCELLED'}
-        
-        bpy.ops.object.select_all(action='DESELECT')
-        
-        # Select non-mesh objects and make armature active
-        for obj in non_mesh_objects:
-            obj.select_set(True)
-        
-        armature.select_set(True)
-        context.view_layer.objects.active = armature
-        
-        # Parent without automatic weights (simple parenting)
-        bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
-        
-        self.report({'INFO'}, f"Parented {len(non_mesh_objects)} non-mesh objects to armature")
-        return {'FINISHED'}
-
-class ARWEAPONS_OT_create_empties(bpy.types.Operator):
-    """Create empty objects for weapon attachment points and components"""
-    bl_idname = "arweapons.create_empties"
-    bl_label = "Create Attachment Points"
-    bl_options = {'REGISTER', 'UNDO'}
-    
-    create_slots: bpy.props.BoolProperty(
-        name="Create Attachment Slots",
-        description="Create empty objects for weapon attachment slots",
-        default=True
-    )
-    
-    create_snap_points: bpy.props.BoolProperty(
-        name="Create Hand IK Points",
-        description="Create empty objects for hand IK targets",
-        default=True
-    )
-    
-    create_barrel_points: bpy.props.BoolProperty(
-        name="Create Barrel Points",
-        description="Create empty objects for barrel chamber and muzzle",
-        default=True
-    )
-    
-    create_eye_point: bpy.props.BoolProperty(
-        name="Create Eye Point",
-        description="Create empty object for aiming down sights",
-        default=True
-    )
-    
-    def execute(self, context):
-        # Get or create collection
-        weapon_collection = None
-        collection_name = "Weapon_Components"
-        
-        if collection_name in bpy.data.collections:
-            weapon_collection = bpy.data.collections[collection_name]
-        else:
-            weapon_collection = bpy.data.collections.new(collection_name)
-            context.scene.collection.children.link(weapon_collection)
-        
-        created_empties = []
-        
-        # Create slots based on official documentation
-        if self.create_slots:
-            slot_empties = [
-                "slot_magazine",
-                "slot_optics",
-                "slot_barrel_muzzle",
-                "slot_underbarrel",
-                "slot_bayonet",
-                "slot_flashlight",
-            ]
-            for name in slot_empties:
-                if name not in bpy.data.objects:
-                    empty = self._create_empty(name, EMPTY_LOCATIONS[name], weapon_collection, 'PLAIN_AXES', 0.03)
-                    created_empties.append(name)
-        
-        if self.create_snap_points:
-            snap_empties = [
-                "snap_hand_right",
-                "snap_hand_left",
-            ]
-            for name in snap_empties:
-                if name not in bpy.data.objects:
-                    empty = self._create_empty(name, EMPTY_LOCATIONS[name], weapon_collection, 'PLAIN_AXES', 0.04)
-                    created_empties.append(name)
-        
-        if self.create_barrel_points:
-            barrel_empties = [
-                "barrel_chamber",
-                "barrel_muzzle",
-            ]
-            for name in barrel_empties:
-                if name not in bpy.data.objects:
-                    empty = self._create_empty(name, EMPTY_LOCATIONS[name], weapon_collection, 'SPHERE', 0.01)
-                    created_empties.append(name)
-        
-        if self.create_eye_point:
-            if "eye" not in bpy.data.objects:
-                empty = self._create_empty("eye", EMPTY_LOCATIONS["eye"], weapon_collection, 'CUBE', 0.01)
-                created_empties.append("eye")
-        
-        if created_empties:
-            self.report({'INFO'}, f"Created {len(created_empties)} empty objects (unparented)")
-        else:
-            self.report({'WARNING'}, "No new empties created, they may already exist")
-            
-        return {'FINISHED'}
-    
-    def _create_empty(self, name, location, collection, display_type, size):
-        """Helper function to create an empty object"""
-        empty = bpy.data.objects.new(name, None)
-        empty.empty_display_type = display_type
-        empty.empty_display_size = size
-        empty.location = location
-        collection.objects.link(empty)
-        return empty
-    
-    def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self)
-
-class ARVEHICLES_OT_separate_components(bpy.types.Operator):
-    """Separate selected components and optionally add sockets for Arma Reforger"""
-    bl_idname = "arvehicles.separate_components"
-    bl_label = "Separate Vehicle Components"
-    bl_options = {'REGISTER', 'UNDO'}
-    
-    component_type: bpy.props.EnumProperty(
-        name="Component Type",
-        description="Type of component being separated",
-        items=[
-            ('Sight', "Sight", "Sight component"),
-            ('light', "Light", "Emissive light component"),
-            ('Trigger', "Trigger", "Trigger or movable component"),
-            ('Bolt', "Bolt", "Bolt or movable component"),
-            ('Charging_handle', "Charging Handle", "Charging handle component"),
-            ('accessory', "Accessory", "Optional accessory component"),
-            ('Custom', "Other", "Other component type"),
-        ],
-        default='Trigger'
-    )
-    
-    custom_name: bpy.props.StringProperty(
-        name="Custom Name",
-        description="Custom name for the separated component",
-        default=""
-    )
-    
-    add_socket: bpy.props.BoolProperty(
-        name="Add Socket",
-        description="Add a socket empty at the component's location",
-        default=False
-    )
-    
-    socket_type: bpy.props.EnumProperty(
-        name="Socket Type",
-        description="Type of socket for this component",
-        items=[
-            ('snap_weapon', "Snap Weapon", "Standard attachment snap point"),
-            ('slot_magazine', "Slot Magazine", "Magazine well slot"),
-            ('slot_optics', "Slot Optics", "Optics mount slot"),
-            ('slot_barrel_muzzle', "Slot Barrel Muzzle", "Muzzle slot"),
-            ('slot_underbarrel', "Slot Underbarrel", "Underbarrel slot"),
-            ('slot_bayonet', "Slot Bayonet", "Bayonet mount slot"),
-            ('slot_flashlight', "Slot Flashlight", "Flashlight slot"),
-            ('eye', "Eye Point", "Aiming eye point"),
-            ('barrel_chamber', "Barrel Chamber", "Barrel chamber point"),
-            ('barrel_muzzle', "Barrel Muzzle", "Barrel muzzle point"),
-            ('custom', "Custom", "Custom socket name"),
-        ],
-        default='snap_weapon'
-    )
-    
-    custom_socket_name: bpy.props.StringProperty(
-        name="Custom Socket Name",
-        description="Custom name for the socket (leave empty for auto-generated name)",
-        default=""
-    )
-    
-    set_origin_to_socket: bpy.props.BoolProperty(
-        name="Set Origin to Socket",
-        description="Set the object's origin to the same location as the socket",
-        default=True
-    )
-    
-    add_bone: bpy.props.BoolProperty(
-        name="Add Bone",
-        description="Add a bone at the component's location",
-        default=False
-    )
-    
-    bone_type: bpy.props.EnumProperty(
-        name="Bone Type",
-        description="Type of bone to create",
-        items=[
-            ('w_bolt', "Bolt", "Bolt bone"),
-            ('w_trigger', "Trigger", "Trigger bone"),
-            ('w_fire_mode', "Fire Mode", "Fire mode selector bone"),
-            ('w_ch_handle', "Charging Handle", "Charging handle bone"),
-            ('w_mag_release', "Mag Release", "Magazine release bone"),
-            ('w_safety', "Safety", "Safety lever bone"),
-            ('w_slide', "Slide", "Slide bone (pistols)"),
-            ('w_hammer', "Hammer", "Hammer bone"),
-            ('w_striker', "Striker", "Striker bone"),
-            ('custom', "Custom", "Custom bone name"),
-        ],
-        default='custom'
-    )
-    
-    custom_bone_name: bpy.props.StringProperty(
-        name="Custom Bone Name",
-        description="Custom name for the bone (leave empty for auto-generated name)",
-        default=""
-    )
+    def _get_bone_type_for_component(self, component_type):
+        """Get the matching bone type for a component type"""
+        component_to_bone = {
+            'trigger': 'w_trigger', 'bolt': 'w_bolt', 'charging_handle': 'w_ch_handle',
+            'mag_release': 'w_mag_release', 'safety': 'w_safety', 'fire_mode': 'w_fire_mode',
+            'hammer': 'w_hammer', 'striker': 'w_striker', 'slide': 'w_slide',
+            'barrel': 'w_barrel', 'buttstock': 'w_buttstock', 'ejection_port': 'w_ejection_port',
+            'bipod': 'w_bipodleg', 'sight': 'w_sight',
+        }
+        return component_to_bone.get(component_type, 'custom')
     
     def execute(self, context):
         if context.mode != 'EDIT_MESH':
@@ -1449,11 +1084,8 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
             return {'CANCELLED'}
         
         obj = context.active_object
-        if not obj or obj.type != 'MESH':
-            self.report({'ERROR'}, "No active mesh object")
-            return {'CANCELLED'}
         
-        # Calculate center of selected faces
+        # Calculate the center of the selected faces
         bm = bmesh.from_edit_mesh(mesh)
         selected_faces = [f for f in bm.faces if f.select]
         
@@ -1469,61 +1101,52 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         # Transform to world space
         world_center = obj.matrix_world @ center
         
-        # Generate name for new object
-        prefix = ""
-        if self.component_type == 'Sight':
-            prefix = "Sight_"
-        elif self.component_type == 'light':
-            prefix = "light_"
-        elif self.component_type == 'Trigger':
-            prefix = "Trigger_"
-        elif self.component_type == 'accessory':
-            prefix = "acc_"
-        elif self.component_type == 'Bolt':
-            prefix = "Bolt_"
-                
+        prefix_map = {
+            'sight': "sight_", 'light': "light_", 'trigger': "trigger_", 'bolt': "bolt_",
+            'charging_handle': "ch_handle_", 'mag_release': "mag_release_", 'safety': "safety_",
+            'fire_mode': "fire_mode_", 'hammer': "hammer_", 'striker': "striker_",
+            'slide': "slide_", 'barrel': "barrel_", 'buttstock': "buttstock_",
+            'ejection_port': "ejection_port_", 'bipod': "bipod_", 'accessory': "acc_",
+        }
+        
+        prefix = prefix_map.get(self.component_type, "component_")
         new_name = self.custom_name if self.custom_name else f"{prefix}{obj.name}"
         
         # Separate the selected faces
         bpy.ops.mesh.separate(type='SELECTED')
         bpy.ops.object.mode_set(mode='OBJECT')
         
-        # Get the newly created object
         new_obj = context.selected_objects[-1]
         new_obj.name = new_name
         new_obj["component_type"] = self.component_type
+
+        # Find existing armature - check for any armature first
+        armature = None
+        for armature_obj in bpy.data.objects:
+            if armature_obj.type == 'ARMATURE':
+                armature = armature_obj
+                break
+        
+        if not armature:
+            print("DEBUG: No armature found, will create new one if bone is requested")
         
         socket = None
         bone = None
+        bone_name = None
         
-        # Create socket if requested
-        if self.add_socket:
-            if self.custom_socket_name:
-                socket_name = self.custom_socket_name
-            else:
-                socket_name = f"{self.socket_type}_{len([o for o in bpy.data.objects if self.socket_type in o.name]) + 1}"
-            
-            socket = bpy.data.objects.new(socket_name, None)
-            socket.empty_display_type = 'PLAIN_AXES'
-            socket.empty_display_size = 0.05
-            socket.location = world_center
-            
-            context.collection.objects.link(socket)
-            
-            socket["socket_type"] = self.socket_type
-            socket["attached_part"] = new_obj.name
-            socket["weapon_part"] = "attachment_point"
+        # Get the matching socket and bone types based on component type
+        socket_type = self._get_socket_type_for_component(self.component_type)
+        bone_type = self._get_bone_type_for_component(self.component_type)
         
-        # Create bone if requested
+        # If component type is custom, use the custom name for socket and bone naming
+        if self.component_type == 'custom' and self.custom_name:
+            socket_type = 'custom'
+            bone_type = 'custom'
+        
+        # Create a bone if requested
         if self.add_bone:
-            # Find or create armature
-            armature = None
-            for armature_obj in bpy.data.objects:
-                if armature_obj.type == 'ARMATURE':
-                    armature = armature_obj
-                    break
-            
             if not armature:
+                # Create armature if it doesn't exist
                 armature_data = bpy.data.armatures.new("Armature")
                 armature = bpy.data.objects.new("Armature", armature_data)
                 context.collection.objects.link(armature)
@@ -1538,32 +1161,98 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
                 bpy.ops.object.mode_set(mode='OBJECT')
             
             # Generate bone name
-            if self.bone_type == 'custom' and self.custom_bone_name:
+            if self.custom_bone_name:
                 bone_name = self.custom_bone_name
-            elif self.bone_type == 'custom':
-                bone_name = f"w_{new_name.lower().replace(' ', '_')}"
+                if not bone_name.startswith('w_'):
+                    bone_name = 'w_' + bone_name
+            elif bone_type == 'custom':
+                if self.custom_name:
+                    bone_name = f"w_{self.custom_name.lower().replace(' ', '_')}"
+                else:
+                    bone_name = f"w_{new_name.lower().replace(' ', '_')}"
             else:
-                bone_name = f"{self.bone_type}_{len([o for o in bpy.data.objects if self.bone_type in str(o)]) + 1}"
+                bone_name = bone_type
+                original_bone_name = bone_name
+                counter = 1
+                while bone_name in armature.data.bones:
+                    bone_name = f"{original_bone_name}_{counter:02d}"
+                    counter += 1
             
-            # Create bone
+            # Make armature active and enter edit mode
             context.view_layer.objects.active = armature
             bpy.ops.object.mode_set(mode='EDIT')
             
-            # Auto-increment if name exists
-            original_bone_name = bone_name
-            counter = 1
-            while bone_name in armature.data.edit_bones:
-                bone_name = f"{original_bone_name}.{counter:03d}"
-                counter += 1
-            
+            # Create the bone
             bone = armature.data.edit_bones.new(bone_name)
             bone.head = (world_center.x, world_center.y, world_center.z)
             bone.tail = (world_center.x, world_center.y + 0.087, world_center.z)
+            bone.roll = 0.0
             
+            # Parent to w_root if it exists
             if 'w_root' in armature.data.edit_bones:
                 bone.parent = armature.data.edit_bones['w_root']
             
             bpy.ops.object.mode_set(mode='OBJECT')
+            
+            # Set up skinning for the separated component (if enabled)
+            if self.auto_skinning:
+                bpy.ops.object.select_all(action='DESELECT')
+                new_obj.select_set(True)
+                context.view_layer.objects.active = new_obj
+                
+                # Create vertex group for the bone
+                vertex_group = new_obj.vertex_groups.new(name=bone_name)
+                
+                # Also create w_root group for the main body (standard weapon rigging)
+                if bone_name != "w_root":
+                    w_root_group = new_obj.vertex_groups.new(name="w_root")
+                
+                # Assign all vertices to the specific bone group
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.select_all(action='SELECT')
+                new_obj.vertex_groups.active = vertex_group
+                bpy.ops.object.vertex_group_assign()
+                bpy.ops.object.mode_set(mode='OBJECT')
+                
+                # Create armature modifier
+                armature_mod = new_obj.modifiers.new(name="Armature", type='ARMATURE')
+                armature_mod.object = armature
+                armature_mod.vertex_group = bone_name
+        
+        # Parent the separated component to the armature if it exists
+        if armature:
+            bpy.ops.object.select_all(action='DESELECT')
+            new_obj.select_set(True)
+            armature.select_set(True)
+            context.view_layer.objects.active = armature
+            bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
+        
+        # Create a socket empty if requested
+        if self.add_socket:
+            if self.custom_socket_name:
+                socket_name = self.custom_socket_name
+            elif socket_type == 'custom' and self.custom_name:
+                socket_name = f"Socket_{self.custom_name.replace(' ', '_').title()}"
+            else:
+                socket_name = f"Socket_{socket_type.replace('_', ' ').title().replace(' ', '_')}"
+                existing_sockets = [o for o in bpy.data.objects if socket_name in o.name]
+                if existing_sockets:
+                    socket_name = f"{socket_name}_{len(existing_sockets) + 1:02d}"
+            
+            socket = bpy.data.objects.new(socket_name, None)
+            socket.empty_display_type = 'ARROWS'
+            socket.empty_display_size = 0.05
+            socket.location = world_center
+            
+            context.collection.objects.link(socket)
+            
+            socket["socket_type"] = socket_type
+            socket["attached_part"] = new_obj.name
+            socket["weapon_part"] = "attachment_point"
+            
+            # Parent socket to armature if armature exists
+            if armature:
+                socket.parent = armature
         
         # Set origin to socket position if requested
         if self.add_socket and self.set_origin_to_socket:
@@ -1576,17 +1265,17 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
             bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
             context.scene.cursor.location = cursor_location
         
-        # Select new object
+        # Select only the new object
         bpy.ops.object.select_all(action='DESELECT')
         new_obj.select_set(True)
         context.view_layer.objects.active = new_obj
         
         # Build report message
-        report_msg = f"Separated component '{new_name}'"
+        report_msg = f"Separated component '{new_name}' and parented to armature"
         if self.add_socket:
-            report_msg += f" with socket '{socket.name}'"
+            report_msg += f" with socket (type: {socket_type})"
         if self.add_bone:
-            report_msg += f" with bone '{bone_name}'"
+            report_msg += f" with bone '{bone_name}' and automatic skinning"
         if self.set_origin_to_socket and self.add_socket:
             report_msg += ", origin set to socket"
             
@@ -1602,28 +1291,75 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         layout.prop(self, "component_type")
         layout.prop(self, "custom_name")
         
+        layout.separator()
         layout.prop(self, "add_socket")
-        
         if self.add_socket:
-            layout.prop(self, "socket_type")
             layout.prop(self, "custom_socket_name")
             layout.prop(self, "set_origin_to_socket")
         
+        layout.separator()
         layout.prop(self, "add_bone")
-        
         if self.add_bone:
-            layout.prop(self, "bone_type")
-            if self.bone_type == 'custom':
-                layout.prop(self, "custom_bone_name")
+            layout.prop(self, "custom_bone_name")
+            layout.prop(self, "auto_skinning")
 
-class ARWEAPONS_OT_setup_skinning(bpy.types.Operator):
-    """Setup skinning for weapon mesh objects"""
-    bl_idname = "arweapons.setup_skinning"
-    bl_label = "Setup Weapon Skinning"
+class ARWEAPONS_OT_create_armature(bpy.types.Operator):
+    bl_idname = "arweapons.create_armature"
+    bl_label = "Create Weapon Armature"
     bl_options = {'REGISTER', 'UNDO'}
+    bl_description = "Create a minimal weapon armature with w_root bone following Arma Reforger standards"
     
     def execute(self, context):
-        # Find the armature
+        # Check if armature already exists
+        existing_armature = None
+        for obj in bpy.data.objects:
+            if obj.type == 'ARMATURE' and obj.name in ["Armature", "WeaponArmature"]:
+                existing_armature = obj
+                break
+        
+        if existing_armature:
+            self.report({'INFO'}, f"Weapon armature '{existing_armature.name}' already exists")
+            context.view_layer.objects.active = existing_armature
+            return {'FINISHED'}
+        
+        # Create armature - keep name as "Armature" per Arma standards
+        armature_data = bpy.data.armatures.new("Armature")
+        armature_obj = bpy.data.objects.new("Armature", armature_data)
+        context.collection.objects.link(armature_obj)
+        
+        # Set armature at world origin with proper scale (required by Arma)
+        armature_obj.location = (0, 0, 0)
+        armature_obj.rotation_euler = (0, 0, 0)
+        armature_obj.scale = (1.0, 1.0, 1.0)
+        
+        context.view_layer.objects.active = armature_obj
+        bpy.ops.object.mode_set(mode='EDIT')
+        
+        # Create w_root bone - the essential root bone for all weapons
+        root_bone = armature_data.edit_bones.new('w_root')
+        root_bone.head = (0, 0, 0)  # At world origin as specified
+        root_bone.tail = (0, 0.087, 0)  # Y+ orientation as recommended
+        root_bone.roll = 0.0
+        
+        bpy.ops.object.mode_set(mode='OBJECT')
+        
+        # Set display properties for easier bone visibility
+        armature_data.display_type = 'OCTAHEDRAL'
+        armature_data.show_names = True
+        armature_obj.show_in_front = True
+        
+        self.report({'INFO'}, "Created minimal weapon armature with w_root bone")
+        return {'FINISHED'}
+
+class ARWEAPONS_OT_create_bone(bpy.types.Operator):
+    bl_idname = "arweapons.create_bone"
+    bl_label = "Add Bone"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    bone_type: bpy.props.EnumProperty(name="Bone Type", items=WEAPON_BONE_TYPES, default='w_trigger')
+    custom_bone_name: bpy.props.StringProperty(name="Bone Name", default="custom")
+    
+    def execute(self, context):
         armature = None
         for obj in bpy.data.objects:
             if obj.type == 'ARMATURE':
@@ -1631,10 +1367,130 @@ class ARWEAPONS_OT_setup_skinning(bpy.types.Operator):
                 break
         
         if not armature:
-            self.report({'ERROR'}, "No armature found. Please create bones first.")
+            self.report({'ERROR'}, "No weapon armature found")
             return {'CANCELLED'}
         
-        # Get selected mesh objects
+        context.view_layer.objects.active = armature
+        bpy.ops.object.mode_set(mode='EDIT')
+        
+        bone_length = 0.087
+        
+        if self.bone_type == 'custom':
+            bone_name = self.custom_bone_name
+            if not bone_name.startswith('w_'):
+                bone_name = 'w_' + bone_name
+        else:
+            bone_name = self.bone_type
+        
+        if bone_name in armature.data.edit_bones:
+            if bone_name == 'w_root':
+                self.report({'INFO'}, "w_root already exists")
+                bpy.ops.object.mode_set(mode='OBJECT')
+                return {'FINISHED'}
+            else:
+                base_name = bone_name
+                counter = 1
+                while bone_name in armature.data.edit_bones:
+                    bone_name = f"{base_name}_{counter:02d}"
+                    counter += 1
+        
+        parent_bone = None
+        if self.bone_type != 'w_root' and 'w_root' in armature.data.edit_bones:
+            parent_bone = armature.data.edit_bones['w_root']
+        
+        bone = armature.data.edit_bones.new(bone_name)
+        bone.roll = 0.0
+        if parent_bone:
+            bone.parent = parent_bone
+        
+        # Position bones based on weapon anatomy
+        if self.bone_type == 'w_root':
+            bone.head = (0, 0, 0)
+            bone.tail = (0, bone_length, 0)
+        elif self.bone_type == 'w_trigger':
+            bone.head = (-0.005, 0.019, 0.012)
+            bone.tail = (-0.005, 0.019 + bone_length, 0.012)
+        elif self.bone_type == 'w_fire_mode':
+            bone.head = (-0.001, -0.014, 0.025)
+            bone.tail = (-0.001, -0.014 + bone_length, 0.025)
+        elif self.bone_type == 'w_ch_handle':
+            bone.head = (-0.001, -0.086, 0.083)
+            bone.tail = (-0.001, -0.086 + bone_length, 0.083)
+        elif self.bone_type == 'w_bolt':
+            bone.head = (0, -0.166, 0.065)
+            bone.tail = (0, -0.166 + bone_length, 0.065)
+        elif self.bone_type == 'w_mag_release':
+            bone.head = (0.015, 0.019, 0.012)
+            bone.tail = (0.015, 0.019 + bone_length, 0.012)
+        elif self.bone_type == 'w_safety':
+            bone.head = (0.01, -0.01, 0.02)
+            bone.tail = (0.01, -0.01 + bone_length, 0.02)
+        elif self.bone_type == 'w_buttstock':
+            bone.head = (0, -0.3, 0.05)
+            bone.tail = (0, -0.3 + bone_length, 0.05)
+        elif self.bone_type == 'w_slide':
+            bone.head = (0, -0.08, 0.065)
+            bone.tail = (0, -0.08 + bone_length, 0.065)
+        elif self.bone_type == 'w_hammer':
+            bone.head = (0, -0.04, 0.04)
+            bone.tail = (0, -0.04 + bone_length, 0.04)
+        elif self.bone_type == 'w_striker':
+            bone.head = (0, -0.05, 0.065)
+            bone.tail = (0, -0.05 + bone_length, 0.065)
+        elif self.bone_type == 'w_rear_sight':
+            bone.head = (0, 0.15, 0.09)
+            bone.tail = (0, 0.15 + bone_length, 0.09)
+        elif self.bone_type == 'w_front_sight':
+            bone.head = (0, 0.3, 0.09)
+            bone.tail = (0, 0.3 + bone_length, 0.09)
+        elif self.bone_type == 'w_barrel':
+            bone.head = (0, 0.1, 0.065)
+            bone.tail = (0, 0.1 + bone_length, 0.065)
+        elif self.bone_type == 'w_bipodleg':
+            bone.head = (0, 0.2, -0.05)
+            bone.tail = (0, 0.2 + bone_length, -0.05)
+        elif self.bone_type == 'w_bipodleg_left':
+            bone.head = (-0.03, 0.2, -0.05)
+            bone.tail = (-0.03, 0.2 + bone_length, -0.05)
+        elif self.bone_type == 'w_bipodleg_right':
+            bone.head = (0.03, 0.2, -0.05)
+            bone.tail = (0.03, 0.2 + bone_length, -0.05)
+        elif self.bone_type == 'w_sight':
+            bone.head = (0, 0.25, 0.095)
+            bone.tail = (0, 0.25 + bone_length, 0.095)
+        elif self.bone_type == 'w_sight_slider':
+            bone.head = (0, 0.18, 0.085)
+            bone.tail = (0, 0.18 + bone_length, 0.085)
+        else:
+            bone.head = (0, 0, 0.05)
+            bone.tail = (0, bone_length, 0.05)
+        
+        bpy.ops.object.mode_set(mode='OBJECT')
+        self.report({'INFO'}, f"Created {bone_name} bone")
+        return {'FINISHED'}
+    
+    def invoke(self, context, event):
+        if self.bone_type == 'custom':
+            return context.window_manager.invoke_props_dialog(self)
+        else:
+            return self.execute(context)
+
+class ARWEAPONS_OT_setup_skinning(bpy.types.Operator):
+    bl_idname = "arweapons.setup_skinning"
+    bl_label = "Setup Weapon Skinning"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    def execute(self, context):
+        armature = None
+        for obj in bpy.data.objects:
+            if obj.type == 'ARMATURE':
+                armature = obj
+                break
+        
+        if not armature:
+            self.report({'ERROR'}, "No weapon armature found")
+            return {'CANCELLED'}
+        
         mesh_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
         
         if not mesh_objects:
@@ -1644,28 +1500,23 @@ class ARWEAPONS_OT_setup_skinning(bpy.types.Operator):
         skinned_objects = 0
         
         for obj in mesh_objects:
-            # Check if armature modifier already exists
             armature_mod = None
             for mod in obj.modifiers:
                 if mod.type == 'ARMATURE':
                     armature_mod = mod
                     break
             
-            # Add armature modifier if it doesn't exist
             if not armature_mod:
                 armature_mod = obj.modifiers.new(name="Armature", type='ARMATURE')
                 armature_mod.object = armature
             
-            # Ensure w_root vertex group exists (all faces must be skinned)
             if "w_root" not in obj.vertex_groups:
                 w_root_group = obj.vertex_groups.new(name="w_root")
                 
-                # Enter edit mode and select all vertices
                 bpy.context.view_layer.objects.active = obj
                 bpy.ops.object.mode_set(mode='EDIT')
                 bpy.ops.mesh.select_all(action='SELECT')
                 
-                # Assign all vertices to w_root with full weight
                 obj.vertex_groups.active = w_root_group
                 bpy.ops.object.vertex_group_assign()
                 
@@ -1676,17 +1527,141 @@ class ARWEAPONS_OT_setup_skinning(bpy.types.Operator):
         self.report({'INFO'}, f"Setup skinning for {skinned_objects} objects")
         return {'FINISHED'}
 
+class ARWEAPONS_OT_parent_to_armature(bpy.types.Operator):
+    bl_idname = "arweapons.parent_to_armature"
+    bl_label = "Parent to Armature"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    def execute(self, context):
+        armature = None
+        for obj in bpy.data.objects:
+            if obj.type == 'ARMATURE':
+                armature = obj
+                break
+        
+        if not armature:
+            self.report({'ERROR'}, "No weapon armature found")
+            return {'CANCELLED'}
+        
+        selected_objects = [obj for obj in context.selected_objects if obj != armature]
+        
+        if not selected_objects:
+            self.report({'ERROR'}, "No objects selected for parenting")
+            return {'CANCELLED'}
+        
+        bpy.ops.object.select_all(action='DESELECT')
+        for obj in selected_objects:
+            obj.select_set(True)
+        armature.select_set(True)
+        context.view_layer.objects.active = armature
+        bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
+        
+        self.report({'INFO'}, f"Parented {len(selected_objects)} objects to armature")
+        return {'FINISHED'}
+
+class ARWEAPONS_OT_create_empties(bpy.types.Operator):
+    bl_idname = "arweapons.create_empties"
+    bl_label = "Create All Weapon Points"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    create_slots: bpy.props.BoolProperty(
+        name="Create Attachment Slots",
+        default=True
+    )
+    
+    create_snap_points: bpy.props.BoolProperty(
+        name="Create Hand IK Points",
+        default=True
+    )
+    
+    create_barrel_points: bpy.props.BoolProperty(
+        name="Create Barrel Points",
+        default=True
+    )
+    
+    create_eye_point: bpy.props.BoolProperty(
+        name="Create Eye Point",
+        default=True
+    )
+    
+    def execute(self, context):
+        collection_name = "Weapon_Components"
+        if collection_name in bpy.data.collections:
+            weapon_collection = bpy.data.collections[collection_name]
+        else:
+            weapon_collection = bpy.data.collections.new(collection_name)
+            context.scene.collection.children.link(weapon_collection)
+        
+        created_empties = []
+        
+        # Default empty locations
+        empty_positions = {
+            # Attachment slots
+            "slot_magazine": (0, 0, -0.06),
+            "slot_optics": (0, 0.1, 0.09),
+            "slot_barrel_muzzle": (0, 0.35, 0.065),
+            "slot_underbarrel": (0, 0.2, -0.03),
+            "slot_bayonet": (0, 0.32, 0.065),
+            "slot_flashlight": (0.02, 0.25, 0.05),
+            
+            # Hand IK points
+            "snap_hand_right": (0.03, 0, 0.02),
+            "snap_hand_left": (-0.03, 0.15, 0.02),
+            
+            # Simulation points
+            "eye": (0, 0.1, 0.085),
+            "barrel_chamber": (0, -0.1, 0.065),
+            "barrel_muzzle": (0, 0.35, 0.065),
+        }
+        
+        if self.create_slots:
+            slot_names = ["slot_magazine", "slot_optics", "slot_barrel_muzzle", 
+                         "slot_underbarrel", "slot_bayonet", "slot_flashlight"]
+            for name in slot_names:
+                if name not in bpy.data.objects:
+                    empty = self._create_empty(name, empty_positions[name], weapon_collection, 'PLAIN_AXES', 0.03)
+                    created_empties.append(name)
+        
+        if self.create_snap_points:
+            snap_names = ["snap_hand_right", "snap_hand_left"]
+            for name in snap_names:
+                if name not in bpy.data.objects:
+                    empty = self._create_empty(name, empty_positions[name], weapon_collection, 'PLAIN_AXES', 0.04)
+                    created_empties.append(name)
+        
+        if self.create_barrel_points:
+            barrel_names = ["barrel_chamber", "barrel_muzzle"]
+            for name in barrel_names:
+                if name not in bpy.data.objects:
+                    empty = self._create_empty(name, empty_positions[name], weapon_collection, 'SPHERE', 0.01)
+                    created_empties.append(name)
+        
+        if self.create_eye_point:
+            if "eye" not in bpy.data.objects:
+                empty = self._create_empty("eye", empty_positions["eye"], weapon_collection, 'CUBE', 0.01)
+                created_empties.append("eye")
+        
+        self.report({'INFO'}, f"Created {len(created_empties)} empty objects")
+        return {'FINISHED'}
+    
+    def _create_empty(self, name, location, collection, display_type, size):
+        empty = bpy.data.objects.new(name, None)
+        empty.empty_display_type = display_type
+        empty.empty_display_size = size
+        empty.location = location
+        collection.objects.link(empty)
+        return empty
+    
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
 class ARWEAPONS_OT_create_vertex_group(bpy.types.Operator):
-    """Create vertex group for selected faces and assign to bone"""
     bl_idname = "arweapons.create_vertex_group"
     bl_label = "Assign Selection to Bone"
     bl_options = {'REGISTER', 'UNDO'}
     
     def get_bone_items(self, context):
-        """Dynamically generate bone list from armature in scene"""
         items = []
-        
-        # Find the armature in the scene
         armature = None
         for obj in bpy.data.objects:
             if obj.type == 'ARMATURE':
@@ -1694,21 +1669,15 @@ class ARWEAPONS_OT_create_vertex_group(bpy.types.Operator):
                 break
         
         if armature:
-            # Add all bones from the armature
             for bone in armature.data.bones:
                 items.append((bone.name, bone.name, f"Assign to {bone.name} bone"))
         
-        # If no armature found, provide default option
         if not items:
-            items.append(('NO_ARMATURE', "No Armature Found", "No armature found in scene"))
+            items.append(('NO_ARMATURE', "No Weapon Armature Found", "No weapon armature found"))
             
         return items
     
-    bone_name: bpy.props.EnumProperty(
-        name="Bone Name",
-        description="Name of the bone to create vertex group for",
-        items=get_bone_items
-    )
+    bone_name: bpy.props.EnumProperty(name="Bone Name", items=get_bone_items)
     
     def execute(self, context):
         obj = context.active_object
@@ -1721,35 +1690,20 @@ class ARWEAPONS_OT_create_vertex_group(bpy.types.Operator):
             self.report({'ERROR'}, "Must be in Edit mode with faces selected")
             return {'CANCELLED'}
         
-        # Check if "No Armature" was selected
         if self.bone_name == 'NO_ARMATURE':
-            self.report({'ERROR'}, "No armature found in scene")
+            self.report({'ERROR'}, "No weapon armature found")
             return {'CANCELLED'}
         
-        # Verify the bone still exists
-        armature = None
-        for armature_obj in bpy.data.objects:
-            if armature_obj.type == 'ARMATURE':
-                armature = armature_obj
-                break
-        
-        if not armature or self.bone_name not in armature.data.bones:
-            self.report({'ERROR'}, f"Bone '{self.bone_name}' not found in armature")
-            return {'CANCELLED'}
-        
-        # Create or get vertex group
         if self.bone_name in obj.vertex_groups:
             vgroup = obj.vertex_groups[self.bone_name]
         else:
             vgroup = obj.vertex_groups.new(name=self.bone_name)
         
-        # Remove selected faces from w_root group first (to avoid double-weighting)
         if "w_root" in obj.vertex_groups and self.bone_name != "w_root":
             w_root_group = obj.vertex_groups["w_root"]
             obj.vertex_groups.active = w_root_group
             bpy.ops.object.vertex_group_remove_from()
         
-        # Assign selected faces to the bone's vertex group
         obj.vertex_groups.active = vgroup
         bpy.ops.object.vertex_group_assign()
         
@@ -1758,14 +1712,270 @@ class ARWEAPONS_OT_create_vertex_group(bpy.types.Operator):
     
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
+
+class ARWEAPONS_OT_cleanup_mesh(bpy.types.Operator):
+    bl_idname = "arweapons.cleanup_mesh"
+    bl_label = "Cleanup Mesh"
+    bl_options = {'REGISTER', 'UNDO'}
+    bl_description = "Fix common mesh issues: duplicates, holes, non-manifold geometry, etc."
     
-    def draw(self, context):
-        layout = self.layout
-        layout.prop(self, "bone_name")
+    merge_threshold: bpy.props.FloatProperty(
+        name="Merge Distance", 
+        default=0.001, 
+        min=0.0001, 
+        max=0.01,
+        description="Distance threshold for merging duplicate vertices"
+    )
+    
+    dissolve_angle: bpy.props.FloatProperty(
+        name="Dissolve Angle", 
+        default=5.0, 
+        min=0.1, 
+        max=15.0,
+        description="Angle threshold for dissolving unnecessary edges (degrees)"
+    )
+    
+    fix_non_manifold: bpy.props.BoolProperty(
+        name="Fix Non-Manifold", 
+        default=False,
+        description="Fix non-manifold geometry that causes decimation artifacts"
+    )
+    
+    fill_holes: bpy.props.BoolProperty(
+        name="Fill Holes", 
+        default=False,
+        description="Fill holes in the mesh"
+    )
+    
+    def execute(self, context):
+        if not context.selected_objects:
+            self.report({'ERROR'}, "No objects selected")
+            return {'CANCELLED'}
+        
+        mesh_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
+        
+        if not mesh_objects:
+            self.report({'ERROR'}, "No mesh objects selected")
+            return {'CANCELLED'}
+        
+        cleaned_objects = 0
+        
+        for obj in mesh_objects:
+            original_faces = len(obj.data.polygons)
+            self._cleanup_mesh(obj)
+            final_faces = len(obj.data.polygons)
+            
+            self.report({'INFO'}, f"Cleaned {obj.name}: {original_faces} -> {final_faces} faces")
+            cleaned_objects += 1
+        
+        self.report({'INFO'}, f"Cleaned {cleaned_objects} mesh objects - ready for modeling/LODs/export")
+        return {'FINISHED'}
+    
+    def _cleanup_mesh(self, obj):
+        """Comprehensive mesh cleanup"""
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.mode_set(mode='EDIT')
+        
+        bpy.ops.mesh.select_mode(type='VERT')
+        bpy.ops.mesh.select_all(action='SELECT')
+        
+        # Remove duplicate vertices
+        bpy.ops.mesh.remove_doubles(threshold=self.merge_threshold)
+        
+        # Delete loose geometry
+        bpy.ops.mesh.delete_loose()
+        
+        # Fill holes if enabled
+        if self.fill_holes:
+            bpy.ops.mesh.fill_holes(sides=0)
+        
+        # Fix non-manifold geometry
+        if self.fix_non_manifold:
+            self._fix_non_manifold_geometry()
+        
+        # Limited dissolve to remove unnecessary edges
+        bpy.ops.mesh.select_all(action='SELECT')
+        dissolve_angle_rad = math.radians(self.dissolve_angle)
+        bpy.ops.mesh.dissolve_limited(angle_limit=dissolve_angle_rad)
+        
+        # Final cleanup
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.mesh.normals_make_consistent(inside=False)
+        try:
+            bpy.ops.mesh.beautify_fill()
+        except:
+            pass
+        
+        bpy.ops.object.mode_set(mode='OBJECT')
+    
+    def _fix_non_manifold_geometry(self):
+        """Fix non-manifold edges and vertices"""
+        bpy.ops.mesh.select_all(action='DESELECT')
+        bpy.ops.mesh.select_non_manifold()
+        
+        selected_edges = bpy.context.tool_settings.mesh_select_mode[1]
+        if selected_edges:
+            bpy.ops.mesh.edge_face_add()
+        else:
+            bpy.ops.mesh.delete(type='VERT')
+    
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+class ARWEAPONS_OT_create_lods(bpy.types.Operator):
+    bl_idname = "arweapons.create_lods"
+    bl_label = "Create LOD Levels"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    lod_levels: bpy.props.IntProperty(
+        name="LOD Levels", 
+        default=3, 
+        min=1, 
+        max=5,
+        description="Number of LOD levels to create"
+    )
+    
+    create_collection: bpy.props.BoolProperty(
+        name="Create Collection", 
+        default=True,
+        description="Organize LODs in a collection"
+    )
+    
+    join_lod_levels: bpy.props.BoolProperty(
+        name="Join LOD Levels", 
+        default=True,
+        description="Join all parts of each LOD level into single objects"
+    )
+    
+    aggressive_reduction: bpy.props.BoolProperty(
+        name="Aggressive Reduction", 
+        default=True,
+        description="Use more dramatic reduction ratios for visible LOD differences"
+    )
+    
+    def execute(self, context):
+        if not context.selected_objects:
+            self.report({'ERROR'}, "No objects selected")
+            return {'CANCELLED'}
+        
+        mesh_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
+        if not mesh_objects:
+            self.report({'ERROR'}, "No mesh objects selected")
+            return {'CANCELLED'}
+        
+        # Get base name from first object or use "Weapon" as default
+        first_obj = mesh_objects[0]
+        base_name = first_obj.name.replace("_LOD0", "").split("_")[0] if "_" in first_obj.name else "Weapon"
+        
+        # Create collection if requested
+        if self.create_collection:
+            collection_name = f"{base_name}_LOD_Collection"
+            if collection_name not in bpy.data.collections:
+                new_collection = bpy.data.collections.new(collection_name)
+                context.scene.collection.children.link(new_collection)
+            else:
+                new_collection = bpy.data.collections[collection_name]
+        
+        # Choose reduction ratios
+        if self.aggressive_reduction:
+            ratios = [0.5, 0.25, 0.15, 0.1, 0.08]  # Weapon-appropriate reduction
+        else:
+            ratios = [0.7, 0.4, 0.25, 0.15, 0.1]  # Conservative reduction
+        
+        created_lods = 0
+        all_lod_objects = {i: [] for i in range(1, self.lod_levels + 1)}
+        
+        # Process each selected object
+        for source_obj in mesh_objects:
+            obj_base_name = source_obj.name.replace("_LOD0", "")
+            
+            for lod in range(1, min(self.lod_levels + 1, 6)):  # Max 5 LODs
+                # Duplicate from source
+                bpy.ops.object.select_all(action='DESELECT')
+                source_obj.select_set(True)
+                context.view_layer.objects.active = source_obj
+                
+                bpy.ops.object.duplicate_move(
+                    OBJECT_OT_duplicate={"linked": False, "mode": 'TRANSLATION'}, 
+                    TRANSFORM_OT_translate={"value": (0, 0, 0)}
+                )
+                
+                lod_obj = context.active_object
+                lod_obj.name = f"{obj_base_name}_LOD{lod}"
+                
+                # Apply decimation
+                bpy.ops.object.modifier_add(type='DECIMATE')
+                decimate_mod = lod_obj.modifiers["Decimate"]
+                decimate_mod.ratio = ratios[lod - 1]
+                bpy.ops.object.modifier_apply(modifier="Decimate")
+                
+                # Add to collection if enabled
+                if self.create_collection:
+                    if lod_obj.name in context.scene.collection.objects:
+                        context.scene.collection.objects.unlink(lod_obj)
+                    new_collection.objects.link(lod_obj)
+                
+                # Track for joining
+                all_lod_objects[lod].append(lod_obj)
+                created_lods += 1
+        
+        # Join LOD levels if requested
+        if self.join_lod_levels:
+            for lod_level, lod_objects in all_lod_objects.items():
+                if len(lod_objects) > 1:
+                    self._join_lod_objects(lod_objects, f"{base_name}_LOD{lod_level}")
+        
+        # Rename source objects to LOD0
+        for source_obj in mesh_objects:
+            if "_LOD0" not in source_obj.name:
+                source_obj.name = f"{source_obj.name}_LOD0"
+            
+            # Add source to collection too
+            if self.create_collection:
+                if source_obj.name in context.scene.collection.objects:
+                    context.scene.collection.objects.unlink(source_obj)
+                new_collection.objects.link(source_obj)
+        
+        # Select remaining LOD objects
+        bpy.ops.object.select_all(action='DESELECT')
+        valid_lod_objects = []
+        
+        for obj_name in bpy.data.objects.keys():
+            if "_LOD" in obj_name and any(obj_name.startswith(f"{base_name}_LOD") for base_name in [obj.name.split("_")[0] for obj in mesh_objects]):
+                obj = bpy.data.objects[obj_name]
+                obj.select_set(True)
+                valid_lod_objects.append(obj)
+        
+        self.report({'INFO'}, f"Created {created_lods} LOD objects, joined into {len(valid_lod_objects)} final LOD levels")
+        return {'FINISHED'}
+    
+    def _join_lod_objects(self, lod_objects, joined_name):
+        """Join multiple LOD objects into a single object"""
+        if not lod_objects:
+            return
+        
+        # Select all objects for this LOD level
+        bpy.ops.object.select_all(action='DESELECT')
+        for obj in lod_objects:
+            obj.select_set(True)
+        
+        # Set the first object as active
+        bpy.context.view_layer.objects.active = lod_objects[0]
+        
+        # Join all selected objects
+        bpy.ops.object.join()
+        
+        # Rename the joined object
+        joined_obj = bpy.context.active_object
+        joined_obj.name = joined_name
+        
+        return joined_obj
+    
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
 
 class ARWEAPONS_PT_panel(bpy.types.Panel):
-    """Arma Reforger Weapons Panel"""
-    bl_label = "AR Weapons"
+    bl_label = "AR Weapons Enhanced"
     bl_idname = "ARWEAPONS_PT_panel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
@@ -1774,7 +1984,63 @@ class ARWEAPONS_PT_panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         
-        # Preparation section
+        box = layout.box()
+        box.label(text="Component Separation", icon='MOD_BUILD')
+        box.operator("arweapons.separate_components", text="Separate Component", icon='UNLINKED')
+        
+        col = box.column(align=True)
+        col.separator()
+        col.label(text="Add to Existing Objects:")
+        col.operator("arweapons.add_to_object", text="Add Bone/Socket to Object", icon='EMPTY_ARROWS')
+        
+        box = layout.box()
+        box.label(text="Collision", icon='MESH_CUBE')
+        
+        row = box.row(align=True)
+        row.operator("arweapons.create_ucx_collision", text="UCX Physics", icon='MESH_CUBE')
+        row.operator("arweapons.create_firegeo_collision", text="FireGeo", icon='MESH_ICOSPHERE')
+        
+        box = layout.box()
+        box.label(text="Attachment Points", icon='EMPTY_DATA')
+        
+        col = box.column(align=True)
+        col.label(text="Create Sockets:")
+        
+        row = col.row(align=True)
+        op = row.operator("arweapons.create_socket", text="Magazine")
+        op.socket_type = 'slot_magazine'
+        op = row.operator("arweapons.create_socket", text="Optics")
+        op.socket_type = 'slot_optics'
+        
+        row = col.row(align=True)
+        op = row.operator("arweapons.create_socket", text="Muzzle")
+        op.socket_type = 'slot_barrel_muzzle'
+        op = row.operator("arweapons.create_socket", text="Underbarrel")
+        op.socket_type = 'slot_underbarrel'
+        
+        row = col.row(align=True)
+        op = row.operator("arweapons.create_socket", text="Bayonet")
+        op.socket_type = 'slot_bayonet'
+        op = row.operator("arweapons.create_socket", text="Flashlight")
+        op.socket_type = 'slot_flashlight'
+        
+        row = col.row(align=True)
+        op = row.operator("arweapons.create_socket", text="Eye Point")
+        op.socket_type = 'eye'
+        op = row.operator("arweapons.create_empties", text="Create All Weapon Points")
+        
+        col.separator()
+        
+        op = col.operator("arweapons.create_socket", text="Custom")
+        op.socket_type = 'custom'
+        
+        box = layout.box()
+        box.label(text="Mesh Tools", icon='EDITMODE_HLT')
+        
+        row = box.row(align=True)
+        row.operator("arweapons.cleanup_mesh", text="Cleanup Mesh", icon='BRUSH_DATA')
+        row.operator("arweapons.create_lods", text="Create LODs", icon='MOD_DECIM')
+        
         box = layout.box()
         box.label(text="Preparation", icon='ORIENTATION_VIEW')
         
@@ -1782,80 +2048,17 @@ class ARWEAPONS_PT_panel(bpy.types.Panel):
         row.operator("arweapons.center_weapon", text="Center", icon='PIVOT_BOUNDBOX')
         row.operator("arweapons.scale_weapon", text="Scale", icon='FULLSCREEN_ENTER')
         
-        # LOD creation
-        box.operator("arweapons.create_lods", text="Create LOD Levels", icon='MOD_DECIM')
-        
-        # Component Separation section
-        box = layout.box()
-        box.label(text="Component Separation", icon='MOD_BUILD')
-        box.operator("arvehicles.separate_components", text="Separate Component", icon='UNLINKED')
-        
-        # Collision boxes section
-        box = layout.box()
-        box.label(text="Collision", icon='MESH_CUBE')
-        box.operator("arweapons.create_collision_box")
-        box.operator("arweapons.create_detailed_collision")
-        
-        # Empty Objects section
-        box = layout.box()
-        box.label(text="Attachment Points", icon='EMPTY_DATA')
-        
-        # Socket creation - organized like bones
-        col = box.column(align=True)
-        col.label(text="Create Sockets:")
-        
-        # Primary weapon sockets
-        row = col.row(align=True)
-        op = row.operator("object.create_weapon_socket", text="Magazine")
-        op.socket_type = 'slot_magazine'
-        op = row.operator("object.create_weapon_socket", text="Optics")
-        op.socket_type = 'slot_optics'
-        
-        row = col.row(align=True)
-        op = row.operator("object.create_weapon_socket", text="Muzzle")
-        op.socket_type = 'slot_barrel_muzzle'
-        op = row.operator("object.create_weapon_socket", text="Underbarrel")
-        op.socket_type = 'slot_underbarrel'
-        
-        # Additional sockets
-        row = col.row(align=True)
-        op = row.operator("object.create_weapon_socket", text="Bayonet")
-        op.socket_type = 'slot_bayonet'
-        op = row.operator("object.create_weapon_socket", text="Flashlight")
-        op.socket_type = 'slot_flashlight'
-        
-        # Simulation points
-        col.separator()
-        col.label(text="Simulation Points:")
-        
-        row = col.row(align=True)
-        op = row.operator("object.create_weapon_socket", text="Eye Point")
-        op.socket_type = 'eye'
-        op = row.operator("object.create_weapon_socket", text="Custom")
-        # Custom will use the dialog as normal
-        
-        row = col.row(align=True)
-        op = row.operator("object.create_weapon_socket", text="Chamber")
-        op.socket_type = 'barrel_chamber'
-        op = row.operator("object.create_weapon_socket", text="Muzzle Point")
-        op.socket_type = 'barrel_muzzle'
-        
-        # Legacy empty creation
-        col.separator()
-        box.operator("arweapons.create_empties", text="Create All Attachment Points")
-        
-        # Rigging section
         box = layout.box()
         box.label(text="Rigging", icon='ARMATURE_DATA')
         
-        # Bone creation
         col = box.column(align=True)
+        col.operator("arweapons.create_armature", text="Create Weapon Armature", icon='ARMATURE_DATA')
+        
+        col.separator()
         col.label(text="Add Bones:")
         
-        # Root bone first
         col.operator("arweapons.create_bone", text="Add w_root").bone_type = 'w_root'
         
-        # Primary action bones
         row = col.row(align=True)
         row.operator("arweapons.create_bone", text="Trigger").bone_type = 'w_trigger'
         row.operator("arweapons.create_bone", text="Fire Mode").bone_type = 'w_fire_mode'
@@ -1864,17 +2067,18 @@ class ARWEAPONS_PT_panel(bpy.types.Panel):
         row.operator("arweapons.create_bone", text="Bolt").bone_type = 'w_bolt'
         row.operator("arweapons.create_bone", text="Charging").bone_type = 'w_ch_handle'
         
-        # Release/control bones
         row = col.row(align=True)
         row.operator("arweapons.create_bone", text="Mag Release").bone_type = 'w_mag_release'
         row.operator("arweapons.create_bone", text="Safety").bone_type = 'w_safety'
         
-        # Sight bones
         row = col.row(align=True)
         row.operator("arweapons.create_bone", text="Front Sight").bone_type = 'w_front_sight'
         row.operator("arweapons.create_bone", text="Rear Sight").bone_type = 'w_rear_sight'
         
-        # Additional bones
+        row = col.row(align=True)
+        row.operator("arweapons.create_bone", text="Sight").bone_type = 'w_sight'
+        row.operator("arweapons.create_bone", text="Sight Slider").bone_type = 'w_sight_slider'
+        
         col.separator()
         col.label(text="Additional Bones:")
         
@@ -1883,36 +2087,47 @@ class ARWEAPONS_PT_panel(bpy.types.Panel):
         row.operator("arweapons.create_bone", text="Hammer").bone_type = 'w_hammer'
         
         row = col.row(align=True)
+        row.operator("arweapons.create_bone", text="Fire Hammer").bone_type = 'w_fire_hammer'
+        row.operator("arweapons.create_bone", text="Striker").bone_type = 'w_striker'
+        
+        row = col.row(align=True)
         row.operator("arweapons.create_bone", text="Buttstock").bone_type = 'w_buttstock'
         row.operator("arweapons.create_bone", text="Barrel").bone_type = 'w_barrel'
         
-        col.operator("arweapons.create_bone", text="Custom").bone_type = 'custom'
+        row = col.row(align=True)
+        row.operator("arweapons.create_bone", text="Bipod Leg").bone_type = 'w_bipodleg'
+        row.operator("arweapons.create_bone", text="Bipod Left").bone_type = 'w_bipodleg_left'
         
-        # Skinning
+        row = col.row(align=True)
+        row.operator("arweapons.create_bone", text="Bipod Right").bone_type = 'w_bipodleg_right'
+        row.operator("arweapons.create_bone", text="Custom").bone_type = 'custom'
+        
         col.separator()
         col.label(text="Skinning:")
         col.operator("arweapons.setup_skinning", text="Setup Skinning")
         col.operator("arweapons.create_vertex_group", text="Assign to Bone")
         
-        # Parenting (kept for non-mesh objects)
         col.separator()
-        col.operator("arweapons.parent_to_armature", text="Parent Empties")
+        col.label(text="Parenting:")
+        col.operator("arweapons.parent_to_armature", text="Parent to Armature")
 
-# Registration
 classes = (
+    ARWEAPONS_OT_create_ucx_collision,
+    ARWEAPONS_OT_create_firegeo_collision,
     ARWEAPONS_OT_center_weapon,
     ARWEAPONS_OT_scale_weapon,
-    ARWEAPONS_OT_create_lods,
-    ARWEAPONS_OT_create_collision_box,
-    ARWEAPONS_OT_create_detailed_collision,
+    ARWEAPONS_OT_create_socket,
+    ARWEAPONS_OT_separate_components,
+    ARWEAPONS_OT_create_armature,
     ARWEAPONS_OT_create_bone,
+    ARWEAPONS_OT_setup_skinning,
+    ARWEAPONS_OT_add_to_object,
     ARWEAPONS_OT_parent_to_armature,
     ARWEAPONS_OT_create_empties,
-    ARWEAPONS_OT_setup_skinning,
     ARWEAPONS_OT_create_vertex_group,
+    ARWEAPONS_OT_cleanup_mesh,
+    ARWEAPONS_OT_create_lods,
     ARWEAPONS_PT_panel,
-    ARVEHICLES_OT_separate_components,
-    CREATE_SOCKET_OT_create_socket,
 )
 
 def register():
