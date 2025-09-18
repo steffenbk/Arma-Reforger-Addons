@@ -1251,6 +1251,10 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
     custom_bone_name: bpy.props.StringProperty(name="Custom Bone Name", default="")
     auto_skinning: bpy.props.BoolProperty(name="Auto Skinning", description="Automatically setup skinning when adding bone", default=True)
     
+    # Parenting options
+    parent_mesh_to_armature: bpy.props.BoolProperty(name="Parent Mesh to Armature", description="Parent separated mesh to armature", default=True)
+    parent_socket_to_armature: bpy.props.BoolProperty(name="Parent Socket to Armature", description="Parent socket to armature", default=True)
+    
     def _get_socket_type_for_component(self, component_type):
         """Get the matching socket type for a component type"""
         component_to_socket = {
@@ -1326,17 +1330,13 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         new_obj = context.selected_objects[-1]
         new_obj.name = new_name
         new_obj["component_type"] = self.component_type
-
-# Find existing armature - check for any armature first
+        
+        # Find existing armature - check for any armature first
         armature = None
         for armature_obj in bpy.data.objects:
             if armature_obj.type == 'ARMATURE':
                 armature = armature_obj
-                print(f"DEBUG: Found existing armature: {armature.name}")
                 break
-        
-        if not armature:
-            print("DEBUG: No armature found, will create new one if bone is requested")
         
         socket = None
         bone = None
@@ -1355,8 +1355,8 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         if self.add_bone:
             if not armature:
                 # Create armature if it doesn't exist
-                armature_data = bpy.data.armatures.new("Armature")
-                armature = bpy.data.objects.new("Armature", armature_data)
+                armature_data = bpy.data.armatures.new("VehicleArmature")
+                armature = bpy.data.objects.new("VehicleArmature", armature_data)
                 context.collection.objects.link(armature)
                 
                 # Create v_root bone first
@@ -1427,8 +1427,8 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
                 armature_mod.object = armature
                 armature_mod.vertex_group = bone_name
         
-        # Parent the separated component to the armature if it exists
-        if armature:
+        # Parent the separated component to the armature if option is enabled
+        if armature and self.parent_mesh_to_armature:
             bpy.ops.object.select_all(action='DESELECT')
             new_obj.select_set(True)
             armature.select_set(True)
@@ -1458,8 +1458,8 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
             socket["attached_part"] = new_obj.name
             socket["vehicle_part"] = "attachment_point"
             
-            # Parent socket to armature if armature exists
-            if armature:
+            # Parent socket to armature if option is enabled
+            if armature and self.parent_socket_to_armature:
                 socket.parent = armature
         
         # Set origin to socket position if requested
@@ -1504,13 +1504,17 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         if self.add_socket:
             layout.prop(self, "custom_socket_name")
             layout.prop(self, "set_origin_to_socket")
+            layout.prop(self, "parent_socket_to_armature")
         
         layout.separator()
         layout.prop(self, "add_bone")
         if self.add_bone:
             layout.prop(self, "custom_bone_name")
             layout.prop(self, "auto_skinning")
-
+        
+        layout.separator()
+        layout.label(text="Parenting Options:")
+        layout.prop(self, "parent_mesh_to_armature")
 class ARVEHICLES_OT_create_armature(bpy.types.Operator):
     bl_idname = "arvehicles.create_armature"
     bl_label = "Create Vehicle Armature"
