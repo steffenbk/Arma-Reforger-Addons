@@ -102,6 +102,12 @@ class ARVEHICLES_OT_manage_presets(bpy.types.Operator):
         description="Comma-separated list of socket names (must match bone count)"
     )
     
+    parent_meshes: bpy.props.BoolProperty(
+        name="Parent Meshes to Armature",
+        default=True,
+        description="Automatically parent separated meshes to the armature"
+    )
+    
     def execute(self, context):
         scene = context.scene
         
@@ -127,6 +133,7 @@ class ARVEHICLES_OT_manage_presets(bpy.types.Operator):
         scene[f"{preset_prefix}bone_index"] = 0
         scene[f"{preset_prefix}socket_index"] = 0
         scene[f"{preset_prefix}phase"] = "bones"  # Start with bones phase
+        scene[f"{preset_prefix}parent_meshes"] = self.parent_meshes  # Store the option
         
         for i, (bone, socket) in enumerate(zip(bones, sockets)):
             scene[f"{preset_prefix}bone_{i}"] = bone
@@ -152,6 +159,9 @@ class ARVEHICLES_OT_manage_presets(bpy.types.Operator):
         
         layout.label(text="Socket Names (comma-separated):")  
         layout.prop(self, "socket_names", text="")
+        
+        layout.separator()
+        layout.prop(self, "parent_meshes")
         
         layout.separator()
         layout.label(text="Phase 1: Bone separation with auto mesh naming")
@@ -282,7 +292,9 @@ class ARVEHICLES_OT_preset_separation(bpy.types.Operator):
                 armature_mod.object = armature
                 armature_mod.vertex_group = final_bone_name
             
-            # Parent to armature
+        # Parent to armature only if option is enabled
+        parent_meshes = scene.get(f"{preset_prefix}parent_meshes", True)
+        if armature and parent_meshes:
             bpy.ops.object.select_all(action='DESELECT')
             new_obj.select_set(True)
             armature.select_set(True)
@@ -400,7 +412,6 @@ class ARVEHICLES_OT_reset_preset(bpy.types.Operator):
         
         self.report({'INFO'}, f"Reset preset '{preset_name}' to bone phase")
         return {'FINISHED'}
-
 
 
 class ARWEAPONS_OT_create_ucx_collision(bpy.types.Operator):
@@ -1372,6 +1383,10 @@ class ARWEAPONS_OT_separate_components(bpy.types.Operator):
     custom_bone_name: bpy.props.StringProperty(name="Custom Bone Name", default="")
     auto_skinning: bpy.props.BoolProperty(name="Auto Skinning", description="Automatically setup skinning when adding bone", default=True)
     
+    # Parenting options
+    parent_mesh_to_armature: bpy.props.BoolProperty(name="Parent Mesh to Armature", description="Parent separated mesh to armature", default=True)
+    parent_socket_to_armature: bpy.props.BoolProperty(name="Parent Socket to Armature", description="Parent socket to armature", default=True)
+    
     def _get_socket_type_for_component(self, component_type):
         """Get the matching socket type for a component type"""
         component_to_socket = {
@@ -1448,9 +1463,6 @@ class ARWEAPONS_OT_separate_components(bpy.types.Operator):
             if armature_obj.type == 'ARMATURE':
                 armature = armature_obj
                 break
-        
-        if not armature:
-            print("DEBUG: No armature found, will create new one if bone is requested")
         
         socket = None
         bone = None
@@ -1541,8 +1553,8 @@ class ARWEAPONS_OT_separate_components(bpy.types.Operator):
                 armature_mod.object = armature
                 armature_mod.vertex_group = bone_name
         
-        # Parent the separated component to the armature if it exists
-        if armature:
+        # Parent the separated component to the armature if option is enabled
+        if armature and self.parent_mesh_to_armature:
             bpy.ops.object.select_all(action='DESELECT')
             new_obj.select_set(True)
             armature.select_set(True)
@@ -1572,8 +1584,8 @@ class ARWEAPONS_OT_separate_components(bpy.types.Operator):
             socket["attached_part"] = new_obj.name
             socket["weapon_part"] = "attachment_point"
             
-            # Parent socket to armature if armature exists
-            if armature:
+            # Parent socket to armature if option is enabled
+            if armature and self.parent_socket_to_armature:
                 socket.parent = armature
         
         # Set origin to socket position if requested
@@ -1593,7 +1605,9 @@ class ARWEAPONS_OT_separate_components(bpy.types.Operator):
         context.view_layer.objects.active = new_obj
         
         # Build report message
-        report_msg = f"Separated component '{new_name}' and parented to armature"
+        report_msg = f"Separated component '{new_name}'"
+        if self.parent_mesh_to_armature and armature:
+            report_msg += " and parented to armature"
         if self.add_socket:
             report_msg += f" with socket (type: {socket_type})"
         if self.add_bone:
@@ -1618,12 +1632,18 @@ class ARWEAPONS_OT_separate_components(bpy.types.Operator):
         if self.add_socket:
             layout.prop(self, "custom_socket_name")
             layout.prop(self, "set_origin_to_socket")
+            layout.prop(self, "parent_socket_to_armature")
         
         layout.separator()
         layout.prop(self, "add_bone")
         if self.add_bone:
             layout.prop(self, "custom_bone_name")
             layout.prop(self, "auto_skinning")
+        
+        layout.separator()
+        layout.label(text="Parenting Options:")
+        layout.prop(self, "parent_mesh_to_armature")
+
 
 class ARWEAPONS_OT_create_armature(bpy.types.Operator):
     bl_idname = "arweapons.create_armature"
