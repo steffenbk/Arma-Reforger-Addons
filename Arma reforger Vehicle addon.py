@@ -166,10 +166,7 @@ class ARVEHICLES_OT_manage_presets(bpy.types.Operator):
         bones = [name.strip() for name in self.bone_names.split(",") if name.strip()]
         sockets = [name.strip() for name in self.socket_names.split(",") if name.strip()]
         
-        # Validate list lengths match
-        if len(bones) != len(sockets):
-            self.report({'ERROR'}, f"List lengths must match: {len(bones)} bones, {len(sockets)} sockets")
-            return {'CANCELLED'}
+
         
         # Store preset data as individual scene properties
         preset_prefix = f"arvehicles_preset_{self.preset_name}_"
@@ -2473,3 +2470,4 @@ def unregister():
 
 if __name__ == "__main__":
     register()
+
