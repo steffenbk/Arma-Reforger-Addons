@@ -81,6 +81,328 @@ WEAPON_BONE_TYPES = [
     ('custom', "Custom Bone", "Add a custom bone"),
 ]
 
+
+
+class ARVEHICLES_OT_manage_presets(bpy.types.Operator):
+    bl_idname = "arvehicles.manage_presets"
+    bl_label = "Manage Vehicle Presets"
+    bl_options = {'REGISTER', 'UNDO'}
+    bl_description = "Create and manage lists of bone/socket names for two-phase separation"
+    
+    preset_name: bpy.props.StringProperty(name="Preset Name", default="MyVehicle")
+    
+    bone_names: bpy.props.StringProperty(
+        name="Bone Names", 
+        default="v_door_left,v_door_right,v_hood,v_trunk,v_wheel_1,v_wheel_2,v_wheel_3,v_wheel_4",
+        description="Comma-separated list of bone names"
+    )
+    socket_names: bpy.props.StringProperty(
+        name="Socket Names",
+        default="Socket_Door,Socket_Door,Socket_Hood,Socket_Trunk,Socket_Wheel,Socket_Wheel,Socket_Wheel,Socket_Wheel", 
+        description="Comma-separated list of socket names (must match bone count)"
+    )
+    
+    def execute(self, context):
+        scene = context.scene
+        
+        # Parse the lists
+        bones = [name.strip() for name in self.bone_names.split(",") if name.strip()]
+        sockets = [name.strip() for name in self.socket_names.split(",") if name.strip()]
+        
+        # Validate list lengths match
+        if len(bones) != len(sockets):
+            self.report({'ERROR'}, f"List lengths must match: {len(bones)} bones, {len(sockets)} sockets")
+            return {'CANCELLED'}
+        
+        # Store preset data as individual scene properties
+        preset_prefix = f"arvehicles_preset_{self.preset_name}_"
+        
+        # Clear any existing preset data
+        keys_to_remove = [key for key in scene.keys() if key.startswith(preset_prefix)]
+        for key in keys_to_remove:
+            del scene[key]
+        
+        # Store new preset data
+        scene[f"{preset_prefix}count"] = len(bones)
+        scene[f"{preset_prefix}bone_index"] = 0
+        scene[f"{preset_prefix}socket_index"] = 0
+        scene[f"{preset_prefix}phase"] = "bones"  # Start with bones phase
+        
+        for i, (bone, socket) in enumerate(zip(bones, sockets)):
+            scene[f"{preset_prefix}bone_{i}"] = bone
+            scene[f"{preset_prefix}socket_{i}"] = socket
+        
+        # Set as active preset
+        scene["arvehicles_active_preset"] = self.preset_name
+        
+        self.report({'INFO'}, f"Created preset '{self.preset_name}' with {len(bones)} items. Starting with bone separation phase!")
+        return {'FINISHED'}
+    
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=400)
+    
+    def draw(self, context):
+        layout = self.layout
+        
+        layout.prop(self, "preset_name")
+        layout.separator()
+        
+        layout.label(text="Bone Names (comma-separated):")
+        layout.prop(self, "bone_names", text="")
+        
+        layout.label(text="Socket Names (comma-separated):")  
+        layout.prop(self, "socket_names", text="")
+        
+        layout.separator()
+        layout.label(text="Phase 1: Bone separation with auto mesh naming")
+        layout.label(text="Phase 2: Socket placement using face selection")
+
+
+class ARVEHICLES_OT_preset_separation(bpy.types.Operator):
+    bl_idname = "arvehicles.preset_separation"
+    bl_label = "Preset Separation"
+    bl_options = {'REGISTER', 'UNDO'}
+    bl_description = "Separate component or place socket using current preset item"
+    
+    auto_skinning: bpy.props.BoolProperty(name="Auto Skinning", default=True)
+    
+    def execute(self, context):
+        scene = context.scene
+        
+        # Check if we have an active preset
+        if "arvehicles_active_preset" not in scene:
+            self.report({'ERROR'}, "No active preset. Create a preset first.")
+            return {'CANCELLED'}
+        
+        preset_name = scene["arvehicles_active_preset"]
+        preset_prefix = f"arvehicles_preset_{preset_name}_"
+        
+        # Check if preset data exists
+        count_key = f"{preset_prefix}count"
+        if count_key not in scene:
+            self.report({'ERROR'}, f"Preset '{preset_name}' data not found. Create the preset again.")
+            return {'CANCELLED'}
+        
+        preset_count = scene[count_key]
+        current_phase = scene.get(f"{preset_prefix}phase", "bones")
+        
+        if current_phase == "bones":
+            return self._handle_bone_phase(context, scene, preset_prefix, preset_count)
+        else:
+            return self._handle_socket_phase(context, scene, preset_prefix, preset_count)
+    
+    def _handle_bone_phase(self, context, scene, preset_prefix, preset_count):
+        bone_index = scene.get(f"{preset_prefix}bone_index", 0)
+        
+        if bone_index >= preset_count:
+            # Move to socket phase
+            scene[f"{preset_prefix}phase"] = "sockets"
+            scene[f"{preset_prefix}socket_index"] = 0
+            self.report({'INFO'}, "Bone phase complete! Now place sockets using face selection.")
+            return {'FINISHED'}
+        
+        # Get current bone name
+        bone_name = scene[f"{preset_prefix}bone_{bone_index}"]
+        mesh_name = f"Mesh_{bone_name}"
+        
+        # Check if we're in edit mode with faces selected
+        if context.mode != 'EDIT_MESH':
+            self.report({'ERROR'}, "Must be in Edit Mode with faces selected")
+            return {'CANCELLED'}
+            
+        mesh = context.active_object.data
+        if not mesh.total_face_sel:
+            self.report({'ERROR'}, "No faces selected")
+            return {'CANCELLED'}
+        
+        obj = context.active_object
+        
+        # Calculate face center
+        bm = bmesh.from_edit_mesh(mesh)
+        selected_faces = [f for f in bm.faces if f.select]
+        
+        center = Vector((0, 0, 0))
+        for face in selected_faces:
+            center += face.calc_center_median()
+        center /= len(selected_faces)
+        world_center = obj.matrix_world @ center
+        
+        # Separate the selected faces
+        bpy.ops.mesh.separate(type='SELECTED')
+        bpy.ops.object.mode_set(mode='OBJECT')
+        
+        new_obj = context.selected_objects[-1]
+        new_obj.name = mesh_name
+        
+        # Find armature and create bone
+        armature = None
+        for armature_obj in bpy.data.objects:
+            if armature_obj.type == 'ARMATURE':
+                armature = armature_obj
+                break
+        
+        if armature:
+            context.view_layer.objects.active = armature
+            bpy.ops.object.mode_set(mode='EDIT')
+            
+            # Check for duplicate and increment if needed
+            final_bone_name = bone_name
+            counter = 1
+            while final_bone_name in armature.data.bones:
+                final_bone_name = f"{bone_name}_{counter:02d}"
+                counter += 1
+            
+            bone = armature.data.edit_bones.new(final_bone_name)
+            bone.head = (world_center.x, world_center.y, world_center.z)
+            bone.tail = (world_center.x, world_center.y + 0.2, world_center.z)
+            bone.roll = 0.0
+            
+            if 'v_root' in armature.data.edit_bones:
+                bone.parent = armature.data.edit_bones['v_root']
+            
+            bpy.ops.object.mode_set(mode='OBJECT')
+            
+            # Setup skinning
+            if self.auto_skinning:
+                bpy.ops.object.select_all(action='DESELECT')
+                new_obj.select_set(True)
+                context.view_layer.objects.active = new_obj
+                
+                vertex_group = new_obj.vertex_groups.new(name=final_bone_name)
+                if final_bone_name != "v_root":
+                    v_root_group = new_obj.vertex_groups.new(name="v_root")
+                
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.select_all(action='SELECT')
+                new_obj.vertex_groups.active = vertex_group
+                bpy.ops.object.vertex_group_assign()
+                bpy.ops.object.mode_set(mode='OBJECT')
+                
+                armature_mod = new_obj.modifiers.new(name="Armature", type='ARMATURE')
+                armature_mod.object = armature
+                armature_mod.vertex_group = final_bone_name
+            
+            # Parent to armature
+            bpy.ops.object.select_all(action='DESELECT')
+            new_obj.select_set(True)
+            armature.select_set(True)
+            context.view_layer.objects.active = armature
+            bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
+        
+        # Advance bone index
+        scene[f"{preset_prefix}bone_index"] = bone_index + 1
+        
+        # Report progress
+        remaining = preset_count - (bone_index + 1)
+        if remaining > 0:
+            next_bone = scene[f"{preset_prefix}bone_{bone_index + 1}"]
+            self.report({'INFO'}, f"Created '{mesh_name}'. Next bone: {next_bone} ({remaining} remaining)")
+        else:
+            self.report({'INFO'}, f"Created '{mesh_name}'. Bone phase complete! Ready for socket phase.")
+        
+        return {'FINISHED'}
+    
+    def _handle_socket_phase(self, context, scene, preset_prefix, preset_count):
+        socket_index = scene.get(f"{preset_prefix}socket_index", 0)
+        
+        if socket_index >= preset_count:
+            self.report({'INFO'}, "All sockets placed! Preset complete.")
+            return {'FINISHED'}
+        
+        # Get current socket name
+        socket_name = scene[f"{preset_prefix}socket_{socket_index}"]
+        
+        # Determine socket position using face selection (like existing socket creation)
+        socket_location = (0, 0, 0)
+        
+        if context.mode == 'EDIT_MESH' and context.active_object and context.active_object.type == 'MESH':
+            obj = context.active_object
+            mesh = obj.data
+            
+            if mesh.total_face_sel > 0:
+                bm = bmesh.from_edit_mesh(mesh)
+                selected_faces = [f for f in bm.faces if f.select]
+                
+                if selected_faces:
+                    center = Vector((0, 0, 0))
+                    for face in selected_faces:
+                        center += face.calc_center_median()
+                    center /= len(selected_faces)
+                    socket_location = obj.matrix_world @ center
+                    bpy.ops.object.mode_set(mode='OBJECT')
+                else:
+                    self.report({'ERROR'}, "No faces selected for socket placement")
+                    return {'CANCELLED'}
+            else:
+                self.report({'ERROR'}, "No faces selected for socket placement")
+                return {'CANCELLED'}
+        else:
+            self.report({'ERROR'}, "Must be in Edit Mode with faces selected for socket placement")
+            return {'CANCELLED'}
+        
+        # Create socket
+        final_socket_name = socket_name
+        existing_sockets = [o for o in bpy.data.objects if final_socket_name in o.name]
+        if existing_sockets:
+            final_socket_name = f"{socket_name}_{len(existing_sockets) + 1:02d}"
+        
+        socket = bpy.data.objects.new(final_socket_name, None)
+        socket.empty_display_type = 'ARROWS'
+        socket.empty_display_size = 0.15
+        socket.location = socket_location
+        
+        context.collection.objects.link(socket)
+        socket["vehicle_part"] = "attachment_point"
+        
+        # Parent to armature if it exists
+        armature = None
+        for armature_obj in bpy.data.objects:
+            if armature_obj.type == 'ARMATURE':
+                armature = armature_obj
+                break
+        
+        if armature:
+            socket.parent = armature
+        
+        # Advance socket index
+        scene[f"{preset_prefix}socket_index"] = socket_index + 1
+        
+        # Report progress
+        remaining = preset_count - (socket_index + 1)
+        if remaining > 0:
+            next_socket = scene[f"{preset_prefix}socket_{socket_index + 1}"]
+            self.report({'INFO'}, f"Placed '{final_socket_name}'. Next socket: {next_socket} ({remaining} remaining)")
+        else:
+            self.report({'INFO'}, f"Placed '{final_socket_name}'. All presets complete!")
+        
+        return {'FINISHED'}
+
+
+class ARVEHICLES_OT_reset_preset(bpy.types.Operator):
+    bl_idname = "arvehicles.reset_preset"
+    bl_label = "Reset Preset"
+    bl_options = {'REGISTER', 'UNDO'}
+    bl_description = "Reset preset to bone phase"
+    
+    def execute(self, context):
+        scene = context.scene
+        
+        if "arvehicles_active_preset" not in scene:
+            self.report({'ERROR'}, "No active preset")
+            return {'CANCELLED'}
+        
+        preset_name = scene["arvehicles_active_preset"]
+        preset_prefix = f"arvehicles_preset_{preset_name}_"
+        
+        scene[f"{preset_prefix}bone_index"] = 0
+        scene[f"{preset_prefix}socket_index"] = 0
+        scene[f"{preset_prefix}phase"] = "bones"
+        
+        self.report({'INFO'}, f"Reset preset '{preset_name}' to bone phase")
+        return {'FINISHED'}
+
+
+
 class ARWEAPONS_OT_create_ucx_collision(bpy.types.Operator):
     bl_idname = "arweapons.create_ucx_collision"
     bl_label = "Create UCX Collision"
@@ -2003,35 +2325,11 @@ class ARWEAPONS_PT_panel(bpy.types.Panel):
         box = layout.box()
         box.label(text="Attachment Points", icon='EMPTY_DATA')
         
-        col = box.column(align=True)
-        col.label(text="Create Sockets:")
-        
-        row = col.row(align=True)
-        op = row.operator("arweapons.create_socket", text="Magazine")
-        op.socket_type = 'slot_magazine'
-        op = row.operator("arweapons.create_socket", text="Optics")
-        op.socket_type = 'slot_optics'
-        
-        row = col.row(align=True)
-        op = row.operator("arweapons.create_socket", text="Muzzle")
-        op.socket_type = 'slot_barrel_muzzle'
-        op = row.operator("arweapons.create_socket", text="Underbarrel")
-        op.socket_type = 'slot_underbarrel'
-        
-        row = col.row(align=True)
-        op = row.operator("arweapons.create_socket", text="Bayonet")
-        op.socket_type = 'slot_bayonet'
-        op = row.operator("arweapons.create_socket", text="Flashlight")
-        op.socket_type = 'slot_flashlight'
-        
-        row = col.row(align=True)
-        op = row.operator("arweapons.create_socket", text="Eye Point")
-        op.socket_type = 'eye'
-        op = row.operator("arweapons.create_empties", text="Create All Weapon Points")
+
         
         col.separator()
-        
-        op = col.operator("arweapons.create_socket", text="Custom")
+        col.label(text="Socket:")
+        op = col.operator("arweapons.create_socket", text="Add Socket")
         op.socket_type = 'custom'
         
         box = layout.box()
@@ -2055,52 +2353,10 @@ class ARWEAPONS_PT_panel(bpy.types.Panel):
         col.operator("arweapons.create_armature", text="Create Weapon Armature", icon='ARMATURE_DATA')
         
         col.separator()
-        col.label(text="Add Bones:")
+        col.label(text="Bones:")
         
-        col.operator("arweapons.create_bone", text="Add w_root").bone_type = 'w_root'
-        
-        row = col.row(align=True)
-        row.operator("arweapons.create_bone", text="Trigger").bone_type = 'w_trigger'
-        row.operator("arweapons.create_bone", text="Fire Mode").bone_type = 'w_fire_mode'
-        
-        row = col.row(align=True)
-        row.operator("arweapons.create_bone", text="Bolt").bone_type = 'w_bolt'
-        row.operator("arweapons.create_bone", text="Charging").bone_type = 'w_ch_handle'
-        
-        row = col.row(align=True)
-        row.operator("arweapons.create_bone", text="Mag Release").bone_type = 'w_mag_release'
-        row.operator("arweapons.create_bone", text="Safety").bone_type = 'w_safety'
-        
-        row = col.row(align=True)
-        row.operator("arweapons.create_bone", text="Front Sight").bone_type = 'w_front_sight'
-        row.operator("arweapons.create_bone", text="Rear Sight").bone_type = 'w_rear_sight'
-        
-        row = col.row(align=True)
-        row.operator("arweapons.create_bone", text="Sight").bone_type = 'w_sight'
-        row.operator("arweapons.create_bone", text="Sight Slider").bone_type = 'w_sight_slider'
-        
-        col.separator()
-        col.label(text="Additional Bones:")
-        
-        row = col.row(align=True)
-        row.operator("arweapons.create_bone", text="Slide").bone_type = 'w_slide'
-        row.operator("arweapons.create_bone", text="Hammer").bone_type = 'w_hammer'
-        
-        row = col.row(align=True)
-        row.operator("arweapons.create_bone", text="Fire Hammer").bone_type = 'w_fire_hammer'
-        row.operator("arweapons.create_bone", text="Striker").bone_type = 'w_striker'
-        
-        row = col.row(align=True)
-        row.operator("arweapons.create_bone", text="Buttstock").bone_type = 'w_buttstock'
-        row.operator("arweapons.create_bone", text="Barrel").bone_type = 'w_barrel'
-        
-        row = col.row(align=True)
-        row.operator("arweapons.create_bone", text="Bipod Leg").bone_type = 'w_bipodleg'
-        row.operator("arweapons.create_bone", text="Bipod Left").bone_type = 'w_bipodleg_left'
-        
-        row = col.row(align=True)
-        row.operator("arweapons.create_bone", text="Bipod Right").bone_type = 'w_bipodleg_right'
-        row.operator("arweapons.create_bone", text="Custom").bone_type = 'custom'
+
+        col.operator("arweapons.create_bone", text="Add bones").bone_type = 'custom'
         
         col.separator()
         col.label(text="Skinning:")
@@ -2111,6 +2367,57 @@ class ARWEAPONS_PT_panel(bpy.types.Panel):
         col.label(text="Parenting:")
         col.operator("arweapons.parent_to_armature", text="Parent to Armature")
 
+
+        # Replace the preset section in your panel with this:
+        
+        box = layout.box()
+        box.label(text="Two-Phase Preset Manager", icon='PRESET')
+        
+        col = box.column(align=True)
+        col.operator("arvehicles.manage_presets", text="Create/Edit Preset", icon='PLUS')
+        
+        row = col.row(align=True)
+        row.operator("arvehicles.preset_separation", text="Preset Action", icon='LOOP_FORWARDS')
+        row.operator("arvehicles.reset_preset", text="Reset", icon='FILE_REFRESH')
+        
+        # Show current preset status
+        scene = context.scene
+        if "arvehicles_active_preset" in scene:
+            preset_name = scene["arvehicles_active_preset"]
+            preset_prefix = f"arvehicles_preset_{preset_name}_"
+            
+            count_key = f"{preset_prefix}count"
+            if count_key in scene:
+                preset_count = scene[count_key]
+                current_phase = scene.get(f"{preset_prefix}phase", "bones")
+                
+                col.separator()
+                col.label(text=f"Active: {preset_name}")
+                col.label(text=f"Phase: {current_phase.title()}")
+                
+                if current_phase == "bones":
+                    bone_index = scene.get(f"{preset_prefix}bone_index", 0)
+                    if bone_index < preset_count:
+                        next_bone = scene[f"{preset_prefix}bone_{bone_index}"]
+                        col.label(text=f"Next: {next_bone}")
+                        col.label(text=f"Mesh: Mesh_{next_bone}")
+                        col.label(text=f"Progress: {bone_index + 1}/{preset_count}")
+                    else:
+                        col.label(text="Ready for socket phase!")
+                else:
+                    socket_index = scene.get(f"{preset_prefix}socket_index", 0)
+                    if socket_index < preset_count:
+                        next_socket = scene[f"{preset_prefix}socket_{socket_index}"]
+                        col.label(text=f"Next: {next_socket}")
+                        col.label(text=f"Progress: {socket_index + 1}/{preset_count}")
+                    else:
+                        col.label(text="All complete!")
+        else:
+            col.separator()
+            col.label(text="No active preset")
+
+
+
 classes = (
     ARWEAPONS_OT_create_ucx_collision,
     ARWEAPONS_OT_create_firegeo_collision,
@@ -2120,6 +2427,9 @@ classes = (
     ARWEAPONS_OT_separate_components,
     ARWEAPONS_OT_create_armature,
     ARWEAPONS_OT_create_bone,
+    ARVEHICLES_OT_manage_presets,
+    ARVEHICLES_OT_preset_separation, 
+    ARVEHICLES_OT_reset_preset,
     ARWEAPONS_OT_setup_skinning,
     ARWEAPONS_OT_add_to_object,
     ARWEAPONS_OT_parent_to_armature,
