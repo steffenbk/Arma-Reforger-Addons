@@ -1558,7 +1558,7 @@ class ARVEHICLES_OT_create_bone(bpy.types.Operator):
     def execute(self, context):
         armature = None
         for obj in bpy.data.objects:
-            if obj.type == 'ARMATURE' and "VehicleArmature" in obj.name:
+            if obj.type == 'ARMATURE':
                 armature = obj
                 break
         
