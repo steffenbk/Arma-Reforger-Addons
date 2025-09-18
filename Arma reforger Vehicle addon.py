@@ -451,6 +451,9 @@ class ARVEHICLES_OT_reset_preset(bpy.types.Operator):
         
         self.report({'INFO'}, f"Reset preset '{preset_name}' to bone phase")
         return {'FINISHED'}
+
+
+
 class ARVEHICLES_OT_create_ucx_collision(bpy.types.Operator):
     bl_idname = "arvehicles.create_ucx_collision"
     bl_label = "Create Collision"
@@ -2289,31 +2292,9 @@ class ARVEHICLES_PT_panel(bpy.types.Panel):
         col.label(text="Create Sockets:")
         
         row = col.row(align=True)
-        op = row.operator("arvehicles.create_socket", text="Door")
-        op.socket_type = 'door'
-        op = row.operator("arvehicles.create_socket", text="Window")
-        op.socket_type = 'window'
-        
-        row = col.row(align=True)
-        op = row.operator("arvehicles.create_socket", text="Hood")
-        op.socket_type = 'hood'
-        op = row.operator("arvehicles.create_socket", text="Trunk")
-        op.socket_type = 'trunk'
-        
-        row = col.row(align=True)
-        op = row.operator("arvehicles.create_socket", text="Wheel")
-        op.socket_type = 'wheel'
-        op = row.operator("arvehicles.create_socket", text="Light")
-        op.socket_type = 'light'
-        
-        row = col.row(align=True)
-        op = row.operator("arvehicles.create_socket", text="Mirror")
-        op.socket_type = 'mirror'
-        op = row.operator("arvehicles.create_empties", text="Create All Vehicle Points")
-        
-        col.separator()
-        
-        op = col.operator("arvehicles.create_socket", text="Custom")
+
+
+        op = col.operator("arvehicles.create_socket", text="Add Socket")
         op.socket_type = 'custom'
                 
         box = layout.box()
@@ -2337,33 +2318,9 @@ class ARVEHICLES_PT_panel(bpy.types.Panel):
         col.separator()
         col.label(text="Add Bones:")
         
-        col.operator("arvehicles.create_bone", text="Add v_root").bone_type = 'v_root'
+
         
-        row = col.row(align=True)
-        row.operator("arvehicles.create_bone", text="Body").bone_type = 'v_body'
-        row.operator("arvehicles.create_bone", text="Door L").bone_type = 'v_door_left'
-        
-        row = col.row(align=True)
-        row.operator("arvehicles.create_bone", text="Door R").bone_type = 'v_door_right'
-        row.operator("arvehicles.create_bone", text="Hood").bone_type = 'v_hood'
-        
-        row = col.row(align=True)
-        row.operator("arvehicles.create_bone", text="Trunk").bone_type = 'v_trunk'
-        row.operator("arvehicles.create_bone", text="Steering").bone_type = 'v_steeringwheel'
-        
-        row = col.row(align=True)
-        row.operator("arvehicles.create_bone", text="Wheel 1").bone_type = 'v_wheel_1'
-        row.operator("arvehicles.create_bone", text="Wheel 2").bone_type = 'v_wheel_2'
-        
-        row = col.row(align=True)
-        row.operator("arvehicles.create_bone", text="Wheel 3").bone_type = 'v_wheel_3'
-        row.operator("arvehicles.create_bone", text="Wheel 4").bone_type = 'v_wheel_4'
-        
-        row = col.row(align=True)
-        row.operator("arvehicles.create_bone", text="Turret Base").bone_type = 'v_turret_base'
-        row.operator("arvehicles.create_bone", text="Turret Gun").bone_type = 'v_turret_gun'
-        
-        col.operator("arvehicles.create_bone", text="Custom").bone_type = 'custom'
+        col.operator("arvehicles.create_bone", text="Add bone").bone_type = 'custom'
         
         col.separator()
         col.label(text="Skinning:")
@@ -2426,6 +2383,10 @@ class ARVEHICLES_PT_panel(bpy.types.Panel):
         else:
             col.separator()
             col.label(text="No active preset")
+
+
+
+
 classes = (
     ARVEHICLES_OT_create_ucx_collision,
     ARVEHICLES_OT_create_firegeo_collision,
