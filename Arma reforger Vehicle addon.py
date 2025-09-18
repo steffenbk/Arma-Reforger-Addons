@@ -153,6 +153,12 @@ class ARVEHICLES_OT_manage_presets(bpy.types.Operator):
         description="Comma-separated list of socket names (must match bone count)"
     )
     
+    parent_meshes: bpy.props.BoolProperty(
+        name="Parent Meshes to Armature",
+        default=True,
+        description="Automatically parent separated meshes to the armature"
+    )
+    
     def execute(self, context):
         scene = context.scene
         
@@ -178,6 +184,7 @@ class ARVEHICLES_OT_manage_presets(bpy.types.Operator):
         scene[f"{preset_prefix}bone_index"] = 0
         scene[f"{preset_prefix}socket_index"] = 0
         scene[f"{preset_prefix}phase"] = "bones"  # Start with bones phase
+        scene[f"{preset_prefix}parent_meshes"] = self.parent_meshes  # Store the option
         
         for i, (bone, socket) in enumerate(zip(bones, sockets)):
             scene[f"{preset_prefix}bone_{i}"] = bone
@@ -203,6 +210,9 @@ class ARVEHICLES_OT_manage_presets(bpy.types.Operator):
         
         layout.label(text="Socket Names (comma-separated):")  
         layout.prop(self, "socket_names", text="")
+        
+        layout.separator()
+        layout.prop(self, "parent_meshes")
         
         layout.separator()
         layout.label(text="Phase 1: Bone separation with auto mesh naming")
@@ -333,7 +343,9 @@ class ARVEHICLES_OT_preset_separation(bpy.types.Operator):
                 armature_mod.object = armature
                 armature_mod.vertex_group = final_bone_name
             
-            # Parent to armature
+        # Parent to armature only if option is enabled
+        parent_meshes = scene.get(f"{preset_prefix}parent_meshes", True)
+        if armature and parent_meshes:
             bpy.ops.object.select_all(action='DESELECT')
             new_obj.select_set(True)
             armature.select_set(True)
@@ -451,7 +463,6 @@ class ARVEHICLES_OT_reset_preset(bpy.types.Operator):
         
         self.report({'INFO'}, f"Reset preset '{preset_name}' to bone phase")
         return {'FINISHED'}
-
 
 
 class ARVEHICLES_OT_create_ucx_collision(bpy.types.Operator):
