@@ -99,7 +99,7 @@ class ARVEHICLES_OT_manage_presets(bpy.types.Operator):
     socket_names: bpy.props.StringProperty(
         name="Socket Names",
         default="Socket_Door,Socket_Door,Socket_Hood,Socket_Trunk,Socket_Wheel,Socket_Wheel,Socket_Wheel,Socket_Wheel", 
-        description="Comma-separated list of socket names (must match bone count)"
+        description="Comma-separated list of socket names"
     )
     
     parent_meshes: bpy.props.BoolProperty(
@@ -115,8 +115,6 @@ class ARVEHICLES_OT_manage_presets(bpy.types.Operator):
         bones = [name.strip() for name in self.bone_names.split(",") if name.strip()]
         sockets = [name.strip() for name in self.socket_names.split(",") if name.strip()]
         
-
-        
         # Store preset data as individual scene properties
         preset_prefix = f"arvehicles_preset_{self.preset_name}_"
         
@@ -125,21 +123,45 @@ class ARVEHICLES_OT_manage_presets(bpy.types.Operator):
         for key in keys_to_remove:
             del scene[key]
         
+        # Use the longer list as the count - bones take priority
+        max_count = max(len(bones), len(sockets)) if sockets else len(bones)
+        
         # Store new preset data
-        scene[f"{preset_prefix}count"] = len(bones)
+        scene[f"{preset_prefix}count"] = max_count
         scene[f"{preset_prefix}bone_index"] = 0
         scene[f"{preset_prefix}socket_index"] = 0
         scene[f"{preset_prefix}phase"] = "bones"
         scene[f"{preset_prefix}parent_meshes"] = self.parent_meshes
         
-        for i, (bone, socket) in enumerate(zip(bones, sockets)):
-            scene[f"{preset_prefix}bone_{i}"] = bone
-            scene[f"{preset_prefix}socket_{i}"] = socket
+        # Store bone data - all bones get stored
+        for i in range(max_count):
+            if i < len(bones):
+                scene[f"{preset_prefix}bone_{i}"] = bones[i]
+            else:
+                # If we run out of bones, create generic names
+                scene[f"{preset_prefix}bone_{i}"] = f"v_component_{i+1:03d}"
+        
+        # Store socket data - pad with generic names if needed
+        for i in range(max_count):
+            if i < len(sockets):
+                scene[f"{preset_prefix}socket_{i}"] = sockets[i]
+            else:
+                # If we run out of sockets, create generic names
+                scene[f"{preset_prefix}socket_{i}"] = f"Socket_Component_{i+1:03d}"
         
         # Set as active preset
         scene["arvehicles_active_preset"] = self.preset_name
         
-        self.report({'INFO'}, f"Created preset '{self.preset_name}' with {len(bones)} items. Starting with bone separation phase!")
+        # Debug info
+        print(f"Debug: Parsed {len(bones)} bones, {len(sockets)} sockets")
+        print(f"Debug: Stored {max_count} items total")
+        
+        # Report with length information
+        if len(bones) != len(sockets):
+            self.report({'WARNING'}, f"Created preset '{self.preset_name}' with {max_count} items. Note: {len(bones)} bones, {len(sockets)} sockets - padded shorter list")
+        else:
+            self.report({'INFO'}, f"Created preset '{self.preset_name}' with {max_count} items. Starting with bone separation phase!")
+        
         return {'FINISHED'}
     
     def invoke(self, context, event):
@@ -163,7 +185,8 @@ class ARVEHICLES_OT_manage_presets(bpy.types.Operator):
         layout.separator()
         layout.label(text="Phase 1: Bone separation with auto mesh naming")
         layout.label(text="Phase 2: Socket placement using face selection")
-
+        layout.separator()
+        layout.label(text="Note: Lists can have different lengths - shorter list will be padded")
 
 class ARVEHICLES_OT_preset_separation(bpy.types.Operator):
     bl_idname = "arvehicles.preset_separation"
@@ -394,13 +417,22 @@ class ARVEHICLES_OT_skip_preset_item(bpy.types.Operator):
                 self.report({'INFO'}, "Bone phase complete! Now in socket phase.")
                 return {'FINISHED'}
             
+            # Get current bone name before incrementing
             skipped_bone = scene[f"{preset_prefix}bone_{bone_index}"]
             scene[f"{preset_prefix}bone_index"] = bone_index + 1
             
-            remaining = preset_count - (bone_index + 1)
+            # Calculate remaining AFTER incrementing
+            new_bone_index = bone_index + 1
+            remaining = preset_count - new_bone_index
+            
             if remaining > 0:
-                next_bone = scene[f"{preset_prefix}bone_{bone_index + 1}"]
-                self.report({'INFO'}, f"Skipped '{skipped_bone}'. Next: {next_bone} ({remaining} remaining)")
+                # Check if next bone exists before accessing it
+                next_bone_key = f"{preset_prefix}bone_{new_bone_index}"
+                if next_bone_key in scene:
+                    next_bone = scene[next_bone_key]
+                    self.report({'INFO'}, f"Skipped '{skipped_bone}'. Next: {next_bone} ({remaining} remaining)")
+                else:
+                    self.report({'INFO'}, f"Skipped '{skipped_bone}'. ({remaining} remaining)")
             else:
                 scene[f"{preset_prefix}phase"] = "sockets"
                 scene[f"{preset_prefix}socket_index"] = 0
@@ -412,18 +444,26 @@ class ARVEHICLES_OT_skip_preset_item(bpy.types.Operator):
                 self.report({'INFO'}, "All preset items complete!")
                 return {'FINISHED'}
             
+            # Get current socket name before incrementing
             skipped_socket = scene[f"{preset_prefix}socket_{socket_index}"]
             scene[f"{preset_prefix}socket_index"] = socket_index + 1
             
-            remaining = preset_count - (socket_index + 1)
+            # Calculate remaining AFTER incrementing
+            new_socket_index = socket_index + 1
+            remaining = preset_count - new_socket_index
+            
             if remaining > 0:
-                next_socket = scene[f"{preset_prefix}socket_{socket_index + 1}"]
-                self.report({'INFO'}, f"Skipped '{skipped_socket}'. Next: {next_socket} ({remaining} remaining)")
+                # Check if next socket exists before accessing it
+                next_socket_key = f"{preset_prefix}socket_{new_socket_index}"
+                if next_socket_key in scene:
+                    next_socket = scene[next_socket_key]
+                    self.report({'INFO'}, f"Skipped '{skipped_socket}'. Next: {next_socket} ({remaining} remaining)")
+                else:
+                    self.report({'INFO'}, f"Skipped '{skipped_socket}'. ({remaining} remaining)")
             else:
                 self.report({'INFO'}, f"Skipped '{skipped_socket}'. All presets complete!")
         
         return {'FINISHED'}
-
 
 class ARVEHICLES_OT_reset_preset(bpy.types.Operator):
     bl_idname = "arvehicles.reset_preset"
@@ -2516,4 +2556,3 @@ def unregister():
 
 if __name__ == "__main__":
     register()
-
