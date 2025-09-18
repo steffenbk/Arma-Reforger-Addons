@@ -183,8 +183,8 @@ class ARVEHICLES_OT_manage_presets(bpy.types.Operator):
         scene[f"{preset_prefix}count"] = len(bones)
         scene[f"{preset_prefix}bone_index"] = 0
         scene[f"{preset_prefix}socket_index"] = 0
-        scene[f"{preset_prefix}phase"] = "bones"  # Start with bones phase
-        scene[f"{preset_prefix}parent_meshes"] = self.parent_meshes  # Store the option
+        scene[f"{preset_prefix}phase"] = "bones"
+        scene[f"{preset_prefix}parent_meshes"] = self.parent_meshes
         
         for i, (bone, socket) in enumerate(zip(bones, sockets)):
             scene[f"{preset_prefix}bone_{i}"] = bone
@@ -221,7 +221,7 @@ class ARVEHICLES_OT_manage_presets(bpy.types.Operator):
 
 class ARVEHICLES_OT_preset_separation(bpy.types.Operator):
     bl_idname = "arvehicles.preset_separation"
-    bl_label = "Preset Separation"
+    bl_label = "Preset Action"
     bl_options = {'REGISTER', 'UNDO'}
     bl_description = "Separate component or place socket using current preset item"
     
@@ -230,7 +230,6 @@ class ARVEHICLES_OT_preset_separation(bpy.types.Operator):
     def execute(self, context):
         scene = context.scene
         
-        # Check if we have an active preset
         if "arvehicles_active_preset" not in scene:
             self.report({'ERROR'}, "No active preset. Create a preset first.")
             return {'CANCELLED'}
@@ -238,7 +237,6 @@ class ARVEHICLES_OT_preset_separation(bpy.types.Operator):
         preset_name = scene["arvehicles_active_preset"]
         preset_prefix = f"arvehicles_preset_{preset_name}_"
         
-        # Check if preset data exists
         count_key = f"{preset_prefix}count"
         if count_key not in scene:
             self.report({'ERROR'}, f"Preset '{preset_name}' data not found. Create the preset again.")
@@ -248,25 +246,22 @@ class ARVEHICLES_OT_preset_separation(bpy.types.Operator):
         current_phase = scene.get(f"{preset_prefix}phase", "bones")
         
         if current_phase == "bones":
-            return self._handle_bone_phase(context, scene, preset_prefix, preset_count)
+            return self._do_bone_separation(context, scene, preset_prefix, preset_count)
         else:
-            return self._handle_socket_phase(context, scene, preset_prefix, preset_count)
+            return self._do_socket_placement(context, scene, preset_prefix, preset_count)
     
-    def _handle_bone_phase(self, context, scene, preset_prefix, preset_count):
+    def _do_bone_separation(self, context, scene, preset_prefix, preset_count):
         bone_index = scene.get(f"{preset_prefix}bone_index", 0)
         
         if bone_index >= preset_count:
-            # Move to socket phase
             scene[f"{preset_prefix}phase"] = "sockets"
             scene[f"{preset_prefix}socket_index"] = 0
             self.report({'INFO'}, "Bone phase complete! Now place sockets using face selection.")
             return {'FINISHED'}
         
-        # Get current bone name
         bone_name = scene[f"{preset_prefix}bone_{bone_index}"]
         mesh_name = f"Mesh_{bone_name}"
         
-        # Check if we're in edit mode with faces selected
         if context.mode != 'EDIT_MESH':
             self.report({'ERROR'}, "Must be in Edit Mode with faces selected")
             return {'CANCELLED'}
@@ -278,7 +273,6 @@ class ARVEHICLES_OT_preset_separation(bpy.types.Operator):
         
         obj = context.active_object
         
-        # Calculate face center
         bm = bmesh.from_edit_mesh(mesh)
         selected_faces = [f for f in bm.faces if f.select]
         
@@ -288,14 +282,12 @@ class ARVEHICLES_OT_preset_separation(bpy.types.Operator):
         center /= len(selected_faces)
         world_center = obj.matrix_world @ center
         
-        # Separate the selected faces
         bpy.ops.mesh.separate(type='SELECTED')
         bpy.ops.object.mode_set(mode='OBJECT')
         
         new_obj = context.selected_objects[-1]
         new_obj.name = mesh_name
         
-        # Find armature and create bone
         armature = None
         for armature_obj in bpy.data.objects:
             if armature_obj.type == 'ARMATURE':
@@ -306,7 +298,6 @@ class ARVEHICLES_OT_preset_separation(bpy.types.Operator):
             context.view_layer.objects.active = armature
             bpy.ops.object.mode_set(mode='EDIT')
             
-            # Check for duplicate and increment if needed
             final_bone_name = bone_name
             counter = 1
             while final_bone_name in armature.data.bones:
@@ -323,7 +314,6 @@ class ARVEHICLES_OT_preset_separation(bpy.types.Operator):
             
             bpy.ops.object.mode_set(mode='OBJECT')
             
-            # Setup skinning
             if self.auto_skinning:
                 bpy.ops.object.select_all(action='DESELECT')
                 new_obj.select_set(True)
@@ -343,19 +333,16 @@ class ARVEHICLES_OT_preset_separation(bpy.types.Operator):
                 armature_mod.object = armature
                 armature_mod.vertex_group = final_bone_name
             
-        # Parent to armature only if option is enabled
-        parent_meshes = scene.get(f"{preset_prefix}parent_meshes", True)
-        if armature and parent_meshes:
-            bpy.ops.object.select_all(action='DESELECT')
-            new_obj.select_set(True)
-            armature.select_set(True)
-            context.view_layer.objects.active = armature
-            bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
+            parent_meshes = scene.get(f"{preset_prefix}parent_meshes", True)
+            if parent_meshes:
+                bpy.ops.object.select_all(action='DESELECT')
+                new_obj.select_set(True)
+                armature.select_set(True)
+                context.view_layer.objects.active = armature
+                bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
         
-        # Advance bone index
         scene[f"{preset_prefix}bone_index"] = bone_index + 1
         
-        # Report progress
         remaining = preset_count - (bone_index + 1)
         if remaining > 0:
             next_bone = scene[f"{preset_prefix}bone_{bone_index + 1}"]
@@ -365,45 +352,36 @@ class ARVEHICLES_OT_preset_separation(bpy.types.Operator):
         
         return {'FINISHED'}
     
-    def _handle_socket_phase(self, context, scene, preset_prefix, preset_count):
+    def _do_socket_placement(self, context, scene, preset_prefix, preset_count):
         socket_index = scene.get(f"{preset_prefix}socket_index", 0)
         
         if socket_index >= preset_count:
             self.report({'INFO'}, "All sockets placed! Preset complete.")
             return {'FINISHED'}
         
-        # Get current socket name
         socket_name = scene[f"{preset_prefix}socket_{socket_index}"]
         
-        # Determine socket position using face selection (like existing socket creation)
-        socket_location = (0, 0, 0)
-        
-        if context.mode == 'EDIT_MESH' and context.active_object and context.active_object.type == 'MESH':
-            obj = context.active_object
-            mesh = obj.data
-            
-            if mesh.total_face_sel > 0:
-                bm = bmesh.from_edit_mesh(mesh)
-                selected_faces = [f for f in bm.faces if f.select]
-                
-                if selected_faces:
-                    center = Vector((0, 0, 0))
-                    for face in selected_faces:
-                        center += face.calc_center_median()
-                    center /= len(selected_faces)
-                    socket_location = obj.matrix_world @ center
-                    bpy.ops.object.mode_set(mode='OBJECT')
-                else:
-                    self.report({'ERROR'}, "No faces selected for socket placement")
-                    return {'CANCELLED'}
-            else:
-                self.report({'ERROR'}, "No faces selected for socket placement")
-                return {'CANCELLED'}
-        else:
+        if context.mode != 'EDIT_MESH':
             self.report({'ERROR'}, "Must be in Edit Mode with faces selected for socket placement")
             return {'CANCELLED'}
         
-        # Create socket
+        obj = context.active_object
+        mesh = obj.data
+        
+        if not mesh.total_face_sel:
+            self.report({'ERROR'}, "No faces selected for socket placement")
+            return {'CANCELLED'}
+        
+        bm = bmesh.from_edit_mesh(mesh)
+        selected_faces = [f for f in bm.faces if f.select]
+        
+        center = Vector((0, 0, 0))
+        for face in selected_faces:
+            center += face.calc_center_median()
+        center /= len(selected_faces)
+        socket_location = obj.matrix_world @ center
+        bpy.ops.object.mode_set(mode='OBJECT')
+        
         final_socket_name = socket_name
         existing_sockets = [o for o in bpy.data.objects if final_socket_name in o.name]
         if existing_sockets:
@@ -417,7 +395,6 @@ class ARVEHICLES_OT_preset_separation(bpy.types.Operator):
         context.collection.objects.link(socket)
         socket["vehicle_part"] = "attachment_point"
         
-        # Parent to armature if it exists
         armature = None
         for armature_obj in bpy.data.objects:
             if armature_obj.type == 'ARMATURE':
@@ -427,16 +404,77 @@ class ARVEHICLES_OT_preset_separation(bpy.types.Operator):
         if armature:
             socket.parent = armature
         
-        # Advance socket index
         scene[f"{preset_prefix}socket_index"] = socket_index + 1
         
-        # Report progress
         remaining = preset_count - (socket_index + 1)
         if remaining > 0:
             next_socket = scene[f"{preset_prefix}socket_{socket_index + 1}"]
             self.report({'INFO'}, f"Placed '{final_socket_name}'. Next socket: {next_socket} ({remaining} remaining)")
         else:
             self.report({'INFO'}, f"Placed '{final_socket_name}'. All presets complete!")
+        
+        return {'FINISHED'}
+
+
+class ARVEHICLES_OT_skip_preset_item(bpy.types.Operator):
+    bl_idname = "arvehicles.skip_preset_item"
+    bl_label = "Skip"
+    bl_options = {'REGISTER', 'UNDO'}
+    bl_description = "Skip the current preset item and move to the next"
+    
+    def execute(self, context):
+        scene = context.scene
+        
+        if "arvehicles_active_preset" not in scene:
+            self.report({'ERROR'}, "No active preset")
+            return {'CANCELLED'}
+        
+        preset_name = scene["arvehicles_active_preset"]
+        preset_prefix = f"arvehicles_preset_{preset_name}_"
+        
+        count_key = f"{preset_prefix}count"
+        if count_key not in scene:
+            self.report({'ERROR'}, f"Preset '{preset_name}' data not found")
+            return {'CANCELLED'}
+        
+        preset_count = scene[count_key]
+        current_phase = scene.get(f"{preset_prefix}phase", "bones")
+        
+        if current_phase == "bones":
+            bone_index = scene.get(f"{preset_prefix}bone_index", 0)
+            if bone_index >= preset_count:
+                scene[f"{preset_prefix}phase"] = "sockets"
+                scene[f"{preset_prefix}socket_index"] = 0
+                self.report({'INFO'}, "Bone phase complete! Now in socket phase.")
+                return {'FINISHED'}
+            
+            skipped_bone = scene[f"{preset_prefix}bone_{bone_index}"]
+            scene[f"{preset_prefix}bone_index"] = bone_index + 1
+            
+            remaining = preset_count - (bone_index + 1)
+            if remaining > 0:
+                next_bone = scene[f"{preset_prefix}bone_{bone_index + 1}"]
+                self.report({'INFO'}, f"Skipped '{skipped_bone}'. Next: {next_bone} ({remaining} remaining)")
+            else:
+                scene[f"{preset_prefix}phase"] = "sockets"
+                scene[f"{preset_prefix}socket_index"] = 0
+                self.report({'INFO'}, f"Skipped '{skipped_bone}'. Bone phase complete! Now in socket phase.")
+                
+        else:
+            socket_index = scene.get(f"{preset_prefix}socket_index", 0)
+            if socket_index >= preset_count:
+                self.report({'INFO'}, "All preset items complete!")
+                return {'FINISHED'}
+            
+            skipped_socket = scene[f"{preset_prefix}socket_{socket_index}"]
+            scene[f"{preset_prefix}socket_index"] = socket_index + 1
+            
+            remaining = preset_count - (socket_index + 1)
+            if remaining > 0:
+                next_socket = scene[f"{preset_prefix}socket_{socket_index + 1}"]
+                self.report({'INFO'}, f"Skipped '{skipped_socket}'. Next: {next_socket} ({remaining} remaining)")
+            else:
+                self.report({'INFO'}, f"Skipped '{skipped_socket}'. All presets complete!")
         
         return {'FINISHED'}
 
@@ -463,7 +501,6 @@ class ARVEHICLES_OT_reset_preset(bpy.types.Operator):
         
         self.report({'INFO'}, f"Reset preset '{preset_name}' to bone phase")
         return {'FINISHED'}
-
 
 class ARVEHICLES_OT_create_ucx_collision(bpy.types.Operator):
     bl_idname = "arvehicles.create_ucx_collision"
@@ -2349,10 +2386,6 @@ class ARVEHICLES_PT_panel(bpy.types.Panel):
         row.operator("arvehicles.parent_empties", text="Parent Empties")
         
         
-        # Add this new section to your ARVEHICLES_PT_panel after the Component Separation box:
-
-        # Replace the preset section in your panel with this:
-        
         box = layout.box()
         box.label(text="Two-Phase Preset Manager", icon='PRESET')
         
@@ -2361,6 +2394,9 @@ class ARVEHICLES_PT_panel(bpy.types.Panel):
         
         row = col.row(align=True)
         row.operator("arvehicles.preset_separation", text="Preset Action", icon='LOOP_FORWARDS')
+        row.operator("arvehicles.skip_preset_item", text="Skip", icon='FORWARD')  # New skip button
+        
+        row = col.row(align=True)
         row.operator("arvehicles.reset_preset", text="Reset", icon='FILE_REFRESH')
         
         # Show current preset status
@@ -2419,6 +2455,7 @@ classes = (
     ARVEHICLES_OT_parent_to_armature,
     ARVEHICLES_OT_create_empties,
     ARVEHICLES_OT_create_vertex_group,
+    ARVEHICLES_OT_skip_preset_item,
     ARVEHICLES_OT_parent_empties,
     ARVEHICLES_OT_create_lods,
     ARVEHICLES_OT_cleanup_mesh,  # Added the cleanup operator
