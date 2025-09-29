@@ -1523,11 +1523,11 @@ class MESH_OT_crater_create_lods(Operator):
             else:
                 new_collection = bpy.data.collections[collection_name]
         
-        # Choose reduction ratios
+        # Improved reduction ratios for complex crater geometry
         if self.aggressive_reduction:
-            ratios = [0.3, 0.15, 0.08, 0.06, 0.05]  # More conservative at high LODs to prevent spikes
+            ratios = [0.6, 0.35, 0.2, 0.12, 0.08]  # More conservative for complex meshes
         else:
-            ratios = [0.5, 0.25, 0.125, 0.0625, 0.03125]  # Conservative reduction
+            ratios = [0.75, 0.5, 0.3, 0.2, 0.15]  # Very conservative reduction
         
         created_lods = 0
         all_lod_objects = {i: [] for i in range(1, self.lod_levels + 1)}  # Track objects by LOD level
@@ -1550,11 +1550,14 @@ class MESH_OT_crater_create_lods(Operator):
                 lod_obj = context.active_object
                 lod_obj.name = f"{obj_base_name}_LOD{lod}"
                 
-                # Apply decimation
-                bpy.ops.object.modifier_add(type='DECIMATE')
-                decimate_mod = lod_obj.modifiers["Decimate"]
-                decimate_mod.ratio = ratios[lod - 1]
-                bpy.ops.object.modifier_apply(modifier="Decimate")
+                # Pre-processing for complex crater meshes
+                self.preprocess_crater_for_lod(lod_obj, lod)
+                
+                # Apply improved decimation for crater geometry
+                self.apply_crater_decimation(lod_obj, ratios[lod - 1], lod)
+                
+                # Post-processing cleanup
+                self.cleanup_lod_mesh(lod_obj)
                 
                 # Add to collection if enabled
                 if self.create_collection:
@@ -1595,6 +1598,68 @@ class MESH_OT_crater_create_lods(Operator):
         
         self.report({'INFO'}, f"Created {created_lods} LOD objects, joined into {len(valid_lod_objects)} final LOD levels")
         return {'FINISHED'}
+    
+    def preprocess_crater_for_lod(self, obj, lod_level):
+        """Pre-process crater mesh to improve LOD generation"""
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.mode_set(mode='EDIT')
+        
+        # Remove doubles first to clean up overlapping vertices from complex generation
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.mesh.remove_doubles(threshold=0.001)
+        
+        # For higher LOD levels, simplify small details that cause decimation issues
+        if lod_level >= 3:
+            # Smooth out extreme surface detail that causes decimation problems
+            bpy.ops.mesh.select_all(action='SELECT')
+            bpy.ops.mesh.vertices_smooth(factor=0.2)
+        
+        bpy.ops.object.mode_set(mode='OBJECT')
+    
+    def apply_crater_decimation(self, obj, target_ratio, lod_level):
+        """Apply optimized decimation for crater geometry"""
+        # Use different decimation strategies based on LOD level
+        if lod_level <= 2:
+            # For early LODs, use collapse decimation which preserves overall shape better
+            decimate = obj.modifiers.new(name="Decimate", type='DECIMATE')
+            decimate.decimate_type = 'COLLAPSE'
+            decimate.ratio = max(0.1, target_ratio)
+            # Preserve crater rim and major features
+            decimate.use_collapse_triangulate = True
+        else:
+            # For higher LODs, use unsubdivided decimation which is more predictable
+            decimate = obj.modifiers.new(name="Decimate", type='DECIMATE')
+            decimate.decimate_type = 'UNSUBDIV'
+            decimate.iterations = min(3, lod_level)
+            
+            # Follow up with collapse if still too complex
+            current_faces = len(obj.data.polygons)
+            if current_faces > 200:  # Still too complex
+                bpy.ops.object.modifier_apply(modifier=decimate.name)
+                
+                collapse_decimate = obj.modifiers.new(name="Decimate_Collapse", type='DECIMATE')
+                collapse_decimate.decimate_type = 'COLLAPSE'
+                collapse_decimate.ratio = min(0.3, 150 / current_faces)  # Target ~150 faces max
+                bpy.ops.object.modifier_apply(modifier=collapse_decimate.name)
+                return
+        
+        bpy.ops.object.modifier_apply(modifier=decimate.name)
+    
+    def cleanup_lod_mesh(self, obj):
+        """Clean up LOD mesh after decimation"""
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.mode_set(mode='EDIT')
+        
+        # Clean up any resulting geometry issues
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.mesh.remove_doubles(threshold=0.001)
+        bpy.ops.mesh.delete_loose()
+        bpy.ops.mesh.fill_holes(sides=10)
+        
+        # Recalculate normals for proper shading
+        bpy.ops.mesh.normals_make_consistent(inside=False)
+        
+        bpy.ops.object.mode_set(mode='OBJECT')
     
     def _join_lod_objects(self, lod_objects, joined_name):
         """Join multiple LOD objects into a single object"""
