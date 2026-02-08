@@ -4,7 +4,7 @@ from bpy.types import Panel, Operator, PropertyGroup
 import re
 
 bl_info = {
-    "name": "Arma Reforger NLA Automation",
+    "name": "Arma Reforger NLA Automation (Generic)",
     "author": "Your Name", 
     "version": (2, 0, 1),
     "blender": (4, 2, 0),
@@ -335,17 +335,144 @@ class ARMA_OT_switch_animation(Operator):
         # Set active action
         armature.animation_data.action = action
         
-        # Enable corresponding track, mute others
+        # Find and select the corresponding track
         target_track_name = f"{self.action_name}_track"
+        target_track = None
         
         for track in armature.animation_data.nla_tracks:
-            track.mute = (track.name != target_track_name)
+            if track.name == target_track_name:
+                target_track = track
+                track.mute = False
+                # Select this track in NLA editor
+                track.select = True
+            else:
+                track.mute = True
+                # Deselect other tracks
+                track.select = False
+        
+        # Set the target track as active (this makes it highlighted in NLA editor)
+        if target_track:
+            armature.animation_data.nla_tracks.active = target_track
         
         # Update switcher to refresh highlighting
         bpy.ops.arma.update_switcher()
         
         self.report({'INFO'}, f"Switched to: {self.action_name}")
         return {'FINISHED'}
+    
+
+class ARMA_OT_create_new_action(Operator):
+    bl_idname = "arma.create_new_action"
+    bl_label = "Create New Action"
+    bl_description = "Create a new blank action with NLA track and fake user"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    action_name: StringProperty(
+        name="Action Name",
+        description="Name for the new action (prefix will be added automatically)",
+        default="new_animation"
+    )
+    
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+    
+    def draw(self, context):
+        layout = self.layout
+        arma_props = context.scene.arma_nla_props
+        
+        layout.prop(self, "action_name")
+        
+        # Preview the full name
+        if arma_props.asset_prefix:
+            prefix = arma_props.asset_prefix.strip()
+            asset_type = arma_props.asset_type
+            
+            if asset_type == 'WEAPON':
+                full_name = f"Pl_{prefix}_{self.action_name}"
+            elif asset_type == 'VEHICLE':
+                full_name = f"v_{prefix}_{self.action_name}"
+            elif asset_type == 'PROP':
+                full_name = f"prop_{prefix}_{self.action_name}"
+            else:  # CUSTOM
+                full_name = f"{prefix}_{self.action_name}"
+            
+            box = layout.box()
+            box.label(text="Will create:", icon='INFO')
+            box.label(text=full_name)
+    
+    def execute(self, context):
+        scene = context.scene
+        arma_props = scene.arma_nla_props
+        
+        # Find armature
+        armature = None
+        if context.active_object and context.active_object.type == 'ARMATURE':
+            armature = context.active_object
+        else:
+            for obj in scene.objects:
+                if obj.type == 'ARMATURE':
+                    armature = obj
+                    break
+        
+        if not armature:
+            self.report({'ERROR'}, "No armature found. Please select an armature object.")
+            return {'CANCELLED'}
+        
+        if not armature.animation_data:
+            armature.animation_data_create()
+        
+        # Generate full action name with prefix
+        prefix = arma_props.asset_prefix.strip()
+        asset_type = arma_props.asset_type
+        
+        if not prefix:
+            self.report({'ERROR'}, "Please set an asset prefix first")
+            return {'CANCELLED'}
+        
+        if asset_type == 'WEAPON':
+            full_name = f"Pl_{prefix}_{self.action_name}"
+        elif asset_type == 'VEHICLE':
+            full_name = f"v_{prefix}_{self.action_name}"
+        elif asset_type == 'PROP':
+            full_name = f"prop_{prefix}_{self.action_name}"
+        else:  # CUSTOM
+            full_name = f"{prefix}_{self.action_name}"
+        
+        # Check if action already exists
+        if bpy.data.actions.get(full_name):
+            self.report({'ERROR'}, f"Action '{full_name}' already exists")
+            return {'CANCELLED'}
+        
+        # Create new blank action
+        new_action = bpy.data.actions.new(full_name)
+        new_action.use_fake_user = True
+        
+        # Create NLA track
+        track_name = f"{full_name}_track"
+        track = armature.animation_data.nla_tracks.new()
+        track.name = track_name
+        
+        # Set as active action
+        armature.animation_data.action = new_action
+        
+        # Mute other tracks, select only this track
+        for other_track in armature.animation_data.nla_tracks:
+            if other_track == track:
+                other_track.mute = False
+                other_track.select = True
+            else:
+                other_track.mute = True
+                other_track.select = False
+        
+        # Set as active track
+        armature.animation_data.nla_tracks.active = track
+        
+        # Refresh switcher
+        bpy.ops.arma.update_switcher()
+        
+        self.report({'INFO'}, f"Created: {full_name}")
+        return {'FINISHED'}
+
 
 class ARMA_OT_update_switcher(Operator):
     bl_idname = "arma.update_switcher"
@@ -531,6 +658,11 @@ class ARMA_PT_nla_panel(Panel):
             refresh_row = box.row()
             refresh_row.scale_y = 1.2
             refresh_row.operator("arma.update_switcher", text="Load", icon='FILE_REFRESH')
+# Utilities
+        layout.separator()
+        box = layout.box()
+        box.label(text="Utilities", icon='TOOL_SETTINGS')
+        box.operator("arma.create_new_action", text="Create New Action", icon='ADD')
 
 # ============================================================================
 # REGISTRATION
@@ -546,6 +678,7 @@ classes = [
     ARMA_OT_switch_animation,
     ARMA_OT_update_switcher,
     ARMA_OT_clear_search,
+    ARMA_OT_create_new_action,  # <- ADD THIS
     ARMA_UL_switcher_list,
     ARMA_UL_action_list,
     ARMA_PT_nla_panel,
@@ -566,4 +699,3 @@ def unregister():
 
 if __name__ == "__main__":
     register()
-
