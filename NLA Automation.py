@@ -4,7 +4,7 @@ from bpy.types import Panel, Operator, PropertyGroup
 import re
 
 bl_info = {
-    "name": "Arma Reforger NLA Automation (Generic)",
+    "name": "Arma Reforger NLA Automation",
     "author": "Your Name", 
     "version": (2, 0, 1),
     "blender": (4, 2, 0),
@@ -566,3 +566,4 @@ def unregister():
 
 if __name__ == "__main__":
     register()
+
