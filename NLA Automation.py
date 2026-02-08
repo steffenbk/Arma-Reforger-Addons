@@ -1,40 +1,99 @@
 import bpy
-from bpy.props import StringProperty, BoolProperty, CollectionProperty
+from bpy.props import StringProperty, BoolProperty, CollectionProperty, EnumProperty
 from bpy.types import Panel, Operator, PropertyGroup
 import re
 
 bl_info = {
-    "name": "Arma Reforger NLA Automation",
+    "name": "Arma Reforger NLA Automation (Generic)",
     "author": "Your Name", 
-    "version": (1, 0, 0),
+    "version": (2, 0, 1),
     "blender": (4, 2, 0),
-    "location": "View3D > Sidebar > Arma Tools",
-    "description": "Automate NLA strip creation and action management for Arma Reforger weapons",
+    "location": "View3D > Sidebar > AR NLA",
+    "description": "Automate NLA strip creation and action management for any Arma Reforger asset",
     "category": "Animation",
 }
 
-def generate_new_action_name(original_name, weapon_prefix):
-    if not weapon_prefix:
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+def generate_new_action_name(original_name, prefix, asset_type):
+    """Generate new action name based on asset type and prefix"""
+    if not prefix:
         return original_name + "_custom"
-        
-    patterns = [
-        (r'^p_([^_]+)_(.+)$', 'Pl_' + weapon_prefix + '_\\2'),
-        (r'^p_rfl_([^_]+)_(.+)$', 'Pl_rfl_' + weapon_prefix + '_\\2'),
-    ]
     
+    # Asset type specific patterns
+    if asset_type == 'WEAPON':
+        patterns = [
+            (r'^p_([^_]+)_(.+)$', f'Pl_{prefix}_\\2'),
+            (r'^p_rfl_([^_]+)_(.+)$', f'Pl_rfl_{prefix}_\\2'),
+            (r'^p_pst_([^_]+)_(.+)$', f'Pl_pst_{prefix}_\\2'),
+        ]
+        fallback_prefix = f'Pl_{prefix}_'
+    elif asset_type == 'VEHICLE':
+        patterns = [
+            (r'^v_([^_]+)_(.+)$', f'v_{prefix}_\\2'),
+            (r'^veh_([^_]+)_(.+)$', f'veh_{prefix}_\\2'),
+        ]
+        fallback_prefix = f'v_{prefix}_'
+    elif asset_type == 'PROP':
+        patterns = [
+            (r'^prop_([^_]+)_(.+)$', f'prop_{prefix}_\\2'),
+            (r'^p_([^_]+)_(.+)$', f'p_{prefix}_\\2'),
+        ]
+        fallback_prefix = f'prop_{prefix}_'
+    else:  # CUSTOM
+        patterns = []
+        fallback_prefix = f'{prefix}_'
+    
+    # Try pattern matching first
     for pattern, replacement in patterns:
         match = re.match(pattern, original_name, re.IGNORECASE)
         if match:
             new_name = re.sub(pattern, replacement, original_name, flags=re.IGNORECASE)
             return new_name
-            
-    return 'Pl_' + weapon_prefix + '_' + original_name
+    
+    # Fallback: prepend asset-specific prefix
+    return f'{fallback_prefix}{original_name}'
+
+def get_exclude_patterns(prefix, asset_type):
+    """Get patterns to exclude from source action list (these are generated actions)"""
+    if not prefix:
+        return []
+    
+    if asset_type == 'WEAPON':
+        return [
+            f"Pl_{prefix}_",
+            f"Pl_rfl_{prefix}_",
+            f"Pl_pst_{prefix}_",
+        ]
+    elif asset_type == 'VEHICLE':
+        return [
+            f"v_{prefix}_",
+            f"veh_{prefix}_",
+        ]
+    elif asset_type == 'PROP':
+        return [
+            f"prop_{prefix}_",
+            f"p_{prefix}_",
+        ]
+    else:  # CUSTOM
+        return [f"{prefix}_"]
+
+def get_include_patterns(prefix, asset_type):
+    """Get patterns to INCLUDE in switcher (these are the generated actions we want to show)"""
+    # This is the same as exclude patterns - we want to show what we exclude from sources
+    return get_exclude_patterns(prefix, asset_type)
+
+# ============================================================================
+# PROPERTY GROUPS
+# ============================================================================
 
 class SwitcherActionItem(PropertyGroup):
     name: StringProperty()
     action_name: StringProperty()
     is_active: BoolProperty(default=False)
     has_fake_user: BoolProperty(default=False)
+    track_name: StringProperty(default="")
 
 class ActionListItem(PropertyGroup):
     name: StringProperty()
@@ -42,10 +101,22 @@ class ActionListItem(PropertyGroup):
     original_name: StringProperty()
 
 class ArmaReforgerNLAProperties(PropertyGroup):
-    weapon_prefix: StringProperty(
-        name="Weapon Prefix",
-        description="Prefix for your weapon (e.g., M50, AK74, etc.)",
+    asset_prefix: StringProperty(
+        name="Asset Prefix",
+        description="Prefix for your asset (e.g., M50, UAZ469, Door01)",
         default="M50"
+    )
+    
+    asset_type: EnumProperty(
+        name="Asset Type",
+        description="Type of asset being worked on",
+        items=[
+            ('WEAPON', "Weapon", "Weapon animations (Pl_ prefix)"),
+            ('VEHICLE', "Vehicle", "Vehicle animations (v_ prefix)"),
+            ('PROP', "Prop", "Prop/object animations (prop_ prefix)"),
+            ('CUSTOM', "Custom", "Custom prefix pattern"),
+        ],
+        default='WEAPON'
     )
     
     set_active_action: BoolProperty(
@@ -54,11 +125,30 @@ class ArmaReforgerNLAProperties(PropertyGroup):
         default=True
     )
     
+    # Filter options
+    show_generated: BoolProperty(
+        name="Show Generated",
+        description="Show generated actions in source list",
+        default=False
+    )
+    
+    # Search functionality
+    search_filter: StringProperty(
+        name="Search",
+        description="Filter animations by name",
+        default="",
+        update=lambda self, context: bpy.ops.arma.update_switcher()
+    )
+    
     action_list: CollectionProperty(type=ActionListItem)
     action_list_index: bpy.props.IntProperty(default=0)
     
     switcher_actions: CollectionProperty(type=SwitcherActionItem)
-    switcher_index: bpy.props.IntProperty(default=0)
+    switcher_index: bpy.props.IntProperty(default=-1)
+
+# ============================================================================
+# OPERATORS
+# ============================================================================
 
 class ARMA_OT_refresh_actions(Operator):
     bl_idname = "arma.refresh_actions"
@@ -71,22 +161,18 @@ class ARMA_OT_refresh_actions(Operator):
         
         arma_props.action_list.clear()
         
-        # Get weapon prefix to filter out custom actions
-        weapon_prefix = arma_props.weapon_prefix.strip()
-        exclude_patterns = []
-        if weapon_prefix:
-            exclude_patterns = [
-                f"Pl_{weapon_prefix}_",
-                f"Pl_rfl_{weapon_prefix}_"
-            ]
+        # Get exclusion patterns
+        prefix = arma_props.asset_prefix.strip()
+        exclude_patterns = get_exclude_patterns(prefix, arma_props.asset_type)
         
-        for action in bpy.data.actions:
-            # Skip custom weapon actions (Pl_M50_*, Pl_rfl_M50_*, etc.)
+        for action in sorted(bpy.data.actions, key=lambda x: x.name):
+            # Skip generated actions unless show_generated is enabled
             should_skip = False
-            for pattern in exclude_patterns:
-                if action.name.startswith(pattern):
-                    should_skip = True
-                    break
+            if not arma_props.show_generated:
+                for pattern in exclude_patterns:
+                    if action.name.startswith(pattern):
+                        should_skip = True
+                        break
             
             if should_skip:
                 continue
@@ -121,22 +207,19 @@ class ARMA_OT_process_nla(Operator):
     bl_idname = "arma.process_nla"
     bl_label = "Process NLA"
     bl_description = "Convert selected actions to NLA strips and create new editable actions"
+    bl_options = {'REGISTER', 'UNDO'}
     
     def execute(self, context):
         scene = context.scene
         arma_props = scene.arma_nla_props
         
-        print("DEBUG: Starting NLA processing...")
-        
         armature = None
         if context.active_object and context.active_object.type == 'ARMATURE':
             armature = context.active_object
-            print(f"DEBUG: Using active armature: {armature.name}")
         else:
             for obj in scene.objects:
                 if obj.type == 'ARMATURE':
                     armature = obj
-                    print(f"DEBUG: Found armature in scene: {armature.name}")
                     break
                     
         if not armature:
@@ -145,10 +228,8 @@ class ARMA_OT_process_nla(Operator):
         
         if not armature.animation_data:
             armature.animation_data_create()
-            print("DEBUG: Created animation data for armature")
             
         selected_actions = [item for item in arma_props.action_list if item.selected]
-        print(f"DEBUG: Found {len(selected_actions)} selected actions")
         
         if not selected_actions:
             self.report({'ERROR'}, "No actions selected")
@@ -157,32 +238,26 @@ class ARMA_OT_process_nla(Operator):
         processed_count = 0
         skipped_count = 0
         error_count = 0
-        weapon_prefix = arma_props.weapon_prefix.strip()
-        
-        print(f"DEBUG: Using weapon prefix: '{weapon_prefix}'")
+        prefix = arma_props.asset_prefix.strip()
+        asset_type = arma_props.asset_type
         
         for i, item in enumerate(selected_actions):
             action_name = item.original_name
             action = bpy.data.actions.get(action_name)
             
-            print(f"DEBUG: Processing {i+1}/{len(selected_actions)}: {action_name}")
-            
             if not action:
-                print(f"DEBUG: Action '{action_name}' not found in bpy.data.actions")
                 error_count += 1
                 continue
                 
             try:
-                new_name = generate_new_action_name(action_name, weapon_prefix)
-                print(f"DEBUG: Generated new name: {new_name}")
+                new_name = generate_new_action_name(action_name, prefix, asset_type)
                 
                 if bpy.data.actions.get(new_name):
-                    print(f"DEBUG: Action '{new_name}' already exists, skipping")
                     skipped_count += 1
                     continue
                 
+                # Push down to NLA
                 armature.animation_data.action = action
-                print(f"DEBUG: Set original action as active: {action.name}")
                 
                 track_name = f"{new_name}_track"
                 track = armature.animation_data.nla_tracks.new()
@@ -190,42 +265,41 @@ class ARMA_OT_process_nla(Operator):
                 
                 strip = track.strips.new(action.name, int(action.frame_range[0]), action)
                 strip.name = f"ref_{action_name}"
-                strip.blend_type = 'COMBINE'  # Set to Combine instead of Replace
-                print(f"DEBUG: Pushed down to NLA strip: {strip.name} (blend: {strip.blend_type})")
+                strip.blend_type = 'COMBINE'
                 
                 armature.animation_data.action = None
                 
+                # Create new editable action
                 new_action = bpy.data.actions.new(new_name)
                 new_action.use_fake_user = True
-                print(f"DEBUG: Created new blank action with fake user: {new_action.name}")
                 
                 armature.animation_data.action = new_action
                 
+                # Mute other tracks
                 for other_track in armature.animation_data.nla_tracks:
                     if other_track != track:
                         other_track.mute = True
                     else:
                         other_track.mute = False
                 
-                print(f"DEBUG: Set up track influence for editing")
                 processed_count += 1
                 
             except Exception as e:
-                print(f"DEBUG: Error processing {action_name}: {str(e)}")
-                import traceback
-                traceback.print_exc()
+                print(f"Error processing {action_name}: {str(e)}")
                 error_count += 1
                 continue
         
         result_msg = f"Processed: {processed_count}, Skipped: {skipped_count}, Errors: {error_count}"
-        print(f"DEBUG: {result_msg}")
         
         if processed_count > 0:
-            self.report({'INFO'}, f"Success! {result_msg}. Ready to edit your new actions!")
+            self.report({'INFO'}, f"Success! {result_msg}")
         elif skipped_count > 0:
             self.report({'WARNING'}, f"All actions already exist. {result_msg}")
         else:
             self.report({'ERROR'}, f"No actions processed. {result_msg}")
+        
+        # Auto-refresh switcher
+        bpy.ops.arma.update_switcher()
             
         return {'FINISHED'}
 
@@ -235,16 +309,10 @@ class ARMA_OT_switch_animation(Operator):
     bl_description = "Switch to the selected animation and enable its corresponding NLA track"
     bl_options = {'REGISTER', 'UNDO'}
     
-    action_name: StringProperty(
-        name="Action Name",
-        description="Name of the action to switch to",
-        default=""
-    )
+    action_name: StringProperty(default="")
     
     def execute(self, context):
         scene = context.scene
-        
-        print(f"DEBUG: Switch animation called with action: {self.action_name}")
         
         armature = None
         if context.active_object and context.active_object.type == 'ARMATURE':
@@ -264,33 +332,19 @@ class ARMA_OT_switch_animation(Operator):
             self.report({'ERROR'}, f"Action '{self.action_name}' not found")
             return {'CANCELLED'}
         
-        print(f"DEBUG: Switching to animation: {self.action_name}")
-        
+        # Set active action
         armature.animation_data.action = action
         
+        # Enable corresponding track, mute others
         target_track_name = f"{self.action_name}_track"
-        target_track = None
         
         for track in armature.animation_data.nla_tracks:
-            if track.name == target_track_name:
-                target_track = track
-                track.mute = False
-                print(f"DEBUG: Enabled track: {track.name}")
-            else:
-                track.mute = True
-                print(f"DEBUG: Muted track: {track.name}")
+            track.mute = (track.name != target_track_name)
         
-        if target_track:
-            self.report({'INFO'}, f"Switched to: {self.action_name}")
-        else:
-            self.report({'WARNING'}, f"Track '{target_track_name}' not found, but action set")
-        
-        # Update the switcher list to refresh the active highlight
+        # Update switcher to refresh highlighting
         bpy.ops.arma.update_switcher()
         
-        # Clear the UIList selection to avoid blue highlight confusion
-        scene.arma_nla_props.switcher_index = -1
-            
+        self.report({'INFO'}, f"Switched to: {self.action_name}")
         return {'FINISHED'}
 
 class ARMA_OT_update_switcher(Operator):
@@ -304,35 +358,69 @@ class ARMA_OT_update_switcher(Operator):
         
         arma_props.switcher_actions.clear()
         
-        weapon_prefix = arma_props.weapon_prefix.strip()
+        prefix = arma_props.asset_prefix.strip()
+        asset_type = arma_props.asset_type
+        search_term = arma_props.search_filter.lower()
         
-        if weapon_prefix:
-            prefix_pattern = f"Pl_{weapon_prefix}_"
+        if not prefix:
+            return {'FINISHED'}
+        
+        # Get patterns to INCLUDE (these are the generated actions we want to show)
+        include_patterns = get_include_patterns(prefix, asset_type)
+        
+        current_action = None
+        if context.active_object and context.active_object.type == 'ARMATURE':
+            if context.active_object.animation_data and context.active_object.animation_data.action:
+                current_action = context.active_object.animation_data.action.name
+        
+        for action in sorted(bpy.data.actions, key=lambda x: x.name):
+            # Check if action matches our patterns (generated actions)
+            matches = False
+            for pattern in include_patterns:
+                if action.name.startswith(pattern):
+                    matches = True
+                    break
             
-            current_action = None
-            if context.active_object and context.active_object.type == 'ARMATURE':
-                if context.active_object.animation_data and context.active_object.animation_data.action:
-                    current_action = context.active_object.animation_data.action.name
+            if not matches:
+                continue
             
-            for action in sorted(bpy.data.actions, key=lambda x: x.name):
-                if action.name.startswith(prefix_pattern):
-                    item = arma_props.switcher_actions.add()
-                    item.name = action.name
-                    item.action_name = action.name
-                    item.is_active = (action.name == current_action)
-                    item.has_fake_user = action.use_fake_user
+            # Apply search filter
+            if search_term and search_term not in action.name.lower():
+                continue
+            
+            item = arma_props.switcher_actions.add()
+            item.name = action.name
+            item.action_name = action.name
+            item.is_active = (action.name == current_action)
+            item.has_fake_user = action.use_fake_user
+            item.track_name = f"{action.name}_track"
         
         return {'FINISHED'}
+
+class ARMA_OT_clear_search(Operator):
+    bl_idname = "arma.clear_search"
+    bl_label = "Clear Search"
+    bl_description = "Clear the search filter"
+    
+    def execute(self, context):
+        context.scene.arma_nla_props.search_filter = ""
+        return {'FINISHED'}
+
+# ============================================================================
+# UI LISTS
+# ============================================================================
 
 class ARMA_UL_switcher_list(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
         if self.layout_type in {'DEFAULT', 'COMPACT'}:
-            # Use the full width for the animation name
             if item.is_active:
                 layout.alert = True
+                icon = 'RADIOBUT_ON'
+            else:
+                icon = 'RADIOBUT_OFF'
             
-            # Create switch button that takes up most of the space
-            props = layout.operator("arma.switch_animation", text=item.name, icon='PLAY', emboss=False)
+            # Switch button with icon indicating active state
+            props = layout.operator("arma.switch_animation", text=item.name, icon=icon, emboss=False)
             props.action_name = item.action_name
 
 class ARMA_UL_action_list(bpy.types.UIList):
@@ -344,85 +432,109 @@ class ARMA_UL_action_list(bpy.types.UIList):
             
             scene = context.scene
             arma_props = scene.arma_nla_props
-            if arma_props.weapon_prefix and item.selected:
-                new_name = generate_new_action_name(item.original_name, arma_props.weapon_prefix)
-                row.label(text=f"-> {new_name}", icon='FORWARD')
+            if arma_props.asset_prefix and item.selected:
+                new_name = generate_new_action_name(
+                    item.original_name, 
+                    arma_props.asset_prefix,
+                    arma_props.asset_type
+                )
+                row.label(text=f"→ {new_name}", icon='FORWARD')
+
+# ============================================================================
+# PANELS
+# ============================================================================
 
 class ARMA_PT_nla_panel(Panel):
     bl_label = "Arma NLA Automation"
     bl_idname = "ARMA_PT_nla_panel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = "AR NLA Tool"
+    bl_category = "AR NLA"
     
     def draw(self, context):
         layout = self.layout
         scene = context.scene
         arma_props = scene.arma_nla_props
         
+        # Asset Settings
         box = layout.box()
-        box.label(text="Weapon Settings", icon='TOOL_SETTINGS')
-        box.prop(arma_props, "weapon_prefix")
+        box.label(text="Asset Settings", icon='SETTINGS')
+        
+        box.prop(arma_props, "asset_type", text="Type")
+        box.prop(arma_props, "asset_prefix", text="Prefix")
         box.prop(arma_props, "set_active_action")
         
+        # Action Management
         box = layout.box()
-        box.label(text="Action Management", icon='ACTION')
+        box.label(text="Source Actions", icon='ACTION')
         
-        row = box.row()
+        row = box.row(align=True)
         row.operator("arma.refresh_actions", icon='FILE_REFRESH')
+        row.prop(arma_props, "show_generated", text="", icon='FILTER', toggle=True)
         
-        row = box.row()
-        row.operator("arma.select_all_actions", text="Select All", icon='CHECKBOX_HLT').select_all = True
-        row.operator("arma.select_all_actions", text="Deselect All", icon='CHECKBOX_DEHLT').select_all = False
+        row = box.row(align=True)
+        row.operator("arma.select_all_actions", text="All", icon='CHECKBOX_HLT').select_all = True
+        row.operator("arma.select_all_actions", text="None", icon='CHECKBOX_DEHLT').select_all = False
         
         if arma_props.action_list:
             box.template_list(
                 "ARMA_UL_action_list", "",
                 arma_props, "action_list",
                 arma_props, "action_list_index",
-                rows=8
+                rows=6
             )
             
             selected_count = sum(1 for item in arma_props.action_list if item.selected)
-            box.label(text=f"Selected: {selected_count}/{len(arma_props.action_list)}")
+            box.label(text=f"Selected: {selected_count}/{len(arma_props.action_list)}", icon='INFO')
         else:
-            box.label(text="Click 'Refresh Actions' to load actions")
+            box.label(text="Click 'Refresh' to load actions")
         
+        # Process Button
         layout.separator()
         col = layout.column()
         col.scale_y = 1.5
         col.operator("arma.process_nla", icon='NLA_PUSHDOWN')
         
+        # Animation Switcher
         layout.separator()
         box = layout.box()
         
         header_row = box.row(align=True)
-        header_row.label(text="Quick Animation Switcher", icon='PLAY')
+        header_row.label(text="Animation Switcher", icon='PLAY')
         header_row.operator("arma.update_switcher", text="", icon='FILE_REFRESH')
+        
+        # Search bar
+        search_row = box.row(align=True)
+        search_row.prop(arma_props, "search_filter", text="", icon='VIEWZOOM')
+        if arma_props.search_filter:
+            search_row.operator("arma.clear_search", text="", icon='X')
         
         if arma_props.switcher_actions:
             box.template_list(
                 "ARMA_UL_switcher_list", "",
                 arma_props, "switcher_actions",
                 arma_props, "switcher_index",
-                rows=10, maxrows=20
+                rows=8, maxrows=20
             )
             
-            info_row = box.row()
             total_count = len(arma_props.switcher_actions)
-            info_row.label(text=f"{total_count} animations")
+            box.label(text=f"{total_count} animations", icon='INFO')
         else:
-            weapon_prefix = arma_props.weapon_prefix.strip()
-            if weapon_prefix:
-                box.label(text=f"No Pl_{weapon_prefix}_ actions found")
-                box.label(text="Click refresh to load animations")
+            if arma_props.asset_prefix:
+                patterns = get_include_patterns(arma_props.asset_prefix, arma_props.asset_type)
+                if patterns:
+                    box.label(text=f"No {patterns[0]}* actions found")
+                box.label(text="Process actions first")
             else:
-                box.label(text="Set weapon prefix above")
-                
-            # Show refresh button prominently when list is empty
+                box.label(text="Set asset prefix above")
+            
             refresh_row = box.row()
             refresh_row.scale_y = 1.2
-            refresh_row.operator("arma.update_switcher", text="Load Animations", icon='FILE_REFRESH')
+            refresh_row.operator("arma.update_switcher", text="Load", icon='FILE_REFRESH')
+
+# ============================================================================
+# REGISTRATION
+# ============================================================================
 
 classes = [
     SwitcherActionItem,
@@ -433,30 +545,21 @@ classes = [
     ARMA_OT_process_nla,
     ARMA_OT_switch_animation,
     ARMA_OT_update_switcher,
+    ARMA_OT_clear_search,
     ARMA_UL_switcher_list,
     ARMA_UL_action_list,
     ARMA_PT_nla_panel,
 ]
 
 def register():
-    print("DEBUG: Registering Arma NLA Automation add-on...")
     for cls in classes:
-        try:
-            bpy.utils.register_class(cls)
-            print(f"DEBUG: Successfully registered {cls.__name__}")
-        except Exception as e:
-            print(f"DEBUG: Failed to register {cls.__name__}: {e}")
+        bpy.utils.register_class(cls)
     
     bpy.types.Scene.arma_nla_props = bpy.props.PointerProperty(type=ArmaReforgerNLAProperties)
-    print("DEBUG: Add-on registration complete")
 
 def unregister():
-    print("DEBUG: Unregistering Arma NLA Automation add-on...")
     for cls in reversed(classes):
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception as e:
-            print(f"DEBUG: Failed to unregister {cls.__name__}: {e}")
+        bpy.utils.unregister_class(cls)
     
     if hasattr(bpy.types.Scene, 'arma_nla_props'):
         del bpy.types.Scene.arma_nla_props
