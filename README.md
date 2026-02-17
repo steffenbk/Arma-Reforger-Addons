@@ -22,7 +22,7 @@ Requires **Blender 4.2+**
 
 1. In Blender, go to **Edit > Preferences > Add-ons > Install from Disk**
 2. For standalone `.py` plugins — select the file directly
-3. For **BK Arma Tools** — run `build_zip.sh` first (or zip the `plugins/bk_arma_tools/` folder yourself), then install the resulting `.zip` file. **Do not unpack it.**
+3. For **BK Arma Tools** — the zip file is already in the `plugins/` folder (`bk_arma_tools.zip`), install it directly as a zip.
 
 ## Other Resources
 
