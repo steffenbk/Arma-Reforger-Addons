@@ -5,12 +5,12 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
-OUTPUT="bk_arma_tools.zip"
+OUTPUT="plugins/bk_arma_tools.zip"
 
 rm -f "$OUTPUT"
 
 cd plugins
-zip -r "../$OUTPUT" bk_arma_tools/ -x "bk_arma_tools/__pycache__/*" "bk_arma_tools/**/__pycache__/*"
+zip -r bk_arma_tools.zip bk_arma_tools/ -x "bk_arma_tools/__pycache__/*" "bk_arma_tools/**/__pycache__/*"
 cd ..
 
 echo "Built $OUTPUT"
