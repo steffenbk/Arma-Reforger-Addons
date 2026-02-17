@@ -4,9 +4,13 @@ A collection of Blender plugins for Arma Reforger modding, by **steffenbk**.
 
 Requires **Blender 4.2+**
 
+## All-in-One Install
+
+Download the latest **[bk_reforger_addons.zip from Releases](https://github.com/steffenbk/bk-reforger-blender-addons/releases/latest)** to get every plugin in a single install. In Blender, go to **Edit > Preferences > Add-ons > Install from Disk** and select the zip.
+
 ## Plugins
 
-### Standalone plugins (install each `.py` file individually)
+### Individual plugins (if you only want specific ones)
 
 | Plugin | File | Description |
 |--------|------|-------------|
