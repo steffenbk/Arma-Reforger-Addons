@@ -1,35 +1,107 @@
 bl_info = {
     "name": "BK Reforger Addons",
     "author": "steffenbk",
-    "version": (1, 0, 0),
+    "version": (1, 1, 0),
     "blender": (4, 2, 0),
     "description": "All-in-one Arma Reforger Blender tools by steffenbk",
     "category": "Object",
 }
 
-submodules = [
-    "bk_nla_automation",
-    "bk_animation_export_profile",
-    "bk_weapon_rig_replacer",
-    "bk_building_destruction",
-    "bk_fbx_exporter",
-    "bk_selective_location_copy",
-    "bk_arma_tools",
-]
+import bpy
+import importlib
+from bpy.props import BoolProperty
+from bpy.types import AddonPreferences
 
-_loaded = []
+# Map of module name -> (display name, default enabled)
+_submodule_info = {
+    "bk_arma_tools":              ("BK Arma Tools",              True),
+    "bk_nla_automation":          ("BK NLA Automation",          True),
+    "bk_animation_export_profile":("BK Animation Export Profile", True),
+    "bk_weapon_rig_replacer":     ("BK Weapon Rig Replacer",     True),
+    "bk_building_destruction":    ("BK Building Destruction",     True),
+    "bk_fbx_exporter":            ("BK Asset Exporter",          True),
+    "bk_selective_location_copy": ("BK Selective Location Copy",  True),
+}
+
+_modules = {}   # name -> module
+_active = set() # currently registered module names
+
+
+def _import_module(name):
+    if name not in _modules:
+        _modules[name] = importlib.import_module(f".{name}", package=__name__)
+    else:
+        _modules[name] = importlib.reload(_modules[name])
+    return _modules[name]
+
+
+def _enable_module(name):
+    if name in _active:
+        return
+    mod = _import_module(name)
+    if hasattr(mod, "register"):
+        mod.register()
+    _active.add(name)
+
+
+def _disable_module(name):
+    if name not in _active:
+        return
+    mod = _modules.get(name)
+    if mod and hasattr(mod, "unregister"):
+        mod.unregister()
+    _active.discard(name)
+
+
+def _make_update(mod_name):
+    def update(self, context):
+        if getattr(self, mod_name):
+            _enable_module(mod_name)
+        else:
+            _disable_module(mod_name)
+    return update
+
+
+class BKReforgerPreferences(AddonPreferences):
+    bl_idname = __package__
+
+    # Dynamically add bool properties below in register()
+
+    def draw(self, context):
+        layout = self.layout
+        layout.label(text="Toggle individual plugins on or off:")
+        for name, (label, _) in _submodule_info.items():
+            row = layout.row()
+            row.prop(self, name, text=label)
+
 
 def register():
-    import importlib
-    for name in submodules:
-        mod = importlib.import_module(f".{name}", package=__name__)
-        importlib.reload(mod)
-        if hasattr(mod, "register"):
-            mod.register()
-        _loaded.append(mod)
+    # Add bool properties to the preferences class
+    for name, (label, default) in _submodule_info.items():
+        setattr(
+            BKReforgerPreferences,
+            name,
+            BoolProperty(
+                name=label,
+                default=default,
+                update=_make_update(name),
+            ),
+        )
+
+    bpy.utils.register_class(BKReforgerPreferences)
+
+    # Enable all modules that are on by default
+    prefs = bpy.context.preferences.addons.get(__package__)
+    for name, (_, default) in _submodule_info.items():
+        enabled = default
+        if prefs and hasattr(prefs.preferences, name):
+            enabled = getattr(prefs.preferences, name)
+        if enabled:
+            _enable_module(name)
+
 
 def unregister():
-    for mod in reversed(_loaded):
-        if hasattr(mod, "unregister"):
-            mod.unregister()
-    _loaded.clear()
+    for name in list(_active):
+        _disable_module(name)
+    bpy.utils.unregister_class(BKReforgerPreferences)
+    _modules.clear()
