@@ -65,7 +65,41 @@ def _make_update(mod_name):
 class BKReforgerPreferences(AddonPreferences):
     bl_idname = __package__
 
-    # Dynamically add bool properties below in register()
+    bk_arma_tools: BoolProperty(
+        name="BK Arma Tools",
+        default=True,
+        update=_make_update("bk_arma_tools"),
+    )
+    bk_nla_automation: BoolProperty(
+        name="BK NLA Automation",
+        default=True,
+        update=_make_update("bk_nla_automation"),
+    )
+    bk_animation_export_profile: BoolProperty(
+        name="BK Animation Export Profile",
+        default=True,
+        update=_make_update("bk_animation_export_profile"),
+    )
+    bk_weapon_rig_replacer: BoolProperty(
+        name="BK Weapon Rig Replacer",
+        default=True,
+        update=_make_update("bk_weapon_rig_replacer"),
+    )
+    bk_building_destruction: BoolProperty(
+        name="BK Building Destruction",
+        default=True,
+        update=_make_update("bk_building_destruction"),
+    )
+    bk_fbx_exporter: BoolProperty(
+        name="BK Asset Exporter",
+        default=True,
+        update=_make_update("bk_fbx_exporter"),
+    )
+    bk_selective_location_copy: BoolProperty(
+        name="BK Selective Location Copy",
+        default=True,
+        update=_make_update("bk_selective_location_copy"),
+    )
 
     def draw(self, context):
         layout = self.layout
@@ -76,21 +110,8 @@ class BKReforgerPreferences(AddonPreferences):
 
 
 def register():
-    # Add bool properties to the preferences class
-    for name, (label, default) in _submodule_info.items():
-        setattr(
-            BKReforgerPreferences,
-            name,
-            BoolProperty(
-                name=label,
-                default=default,
-                update=_make_update(name),
-            ),
-        )
-
     bpy.utils.register_class(BKReforgerPreferences)
 
-    # Enable all modules that are on by default
     prefs = bpy.context.preferences.addons.get(__package__)
     for name, (_, default) in _submodule_info.items():
         enabled = default
