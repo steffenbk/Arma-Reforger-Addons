@@ -164,7 +164,7 @@ class VIEW3D_PT_selective_location_copy(Panel):
     """Panel for the selective location copy tool."""
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = "Animation"
+    bl_category = "BK Location Copy"
     bl_label = "Copy Location"
 
     def draw(self, context: Context) -> None:

@@ -615,7 +615,7 @@ class VIEW3D_PT_weapon_rig_replacer(Panel):
     """Panel for the weapon rig replacer tool."""
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = "Animation"
+    bl_category = "BK Rig Replacer"
     bl_label = "Weapon Rig Replacer"
 
     def draw(self, context: Context) -> None:

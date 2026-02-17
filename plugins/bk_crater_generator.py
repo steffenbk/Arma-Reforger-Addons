@@ -1,5 +1,5 @@
 bl_info = {
-    "name": "BK Crater Generator",
+    "name": "BK Crater",
     "author": "steffenbk",
     "version": (1, 1, 0),
     "blender": (4, 2, 0),

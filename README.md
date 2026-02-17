@@ -20,8 +20,13 @@ Download the latest **[bk_reforger_addons.zip from Releases](https://github.com/
 | **BK Weapon Rig Replacer** | `plugins/bk_weapon_rig_replacer.py` | Replace weapons/magazines while preserving constraints |
 | **BK Building Destruction** | `plugins/bk_building_destruction.py` | Tools for preparing destructible buildings |
 | **BK Asset Exporter** | `plugins/bk_fbx_exporter.py` | FBX export tailored for Enfusion Engine |
-| **BK Crater Generator** | `plugins/bk_crater_generator.py` | Game-ready crater meshes with FireGeo collision and LODs |
 | **BK Selective Location Copy** | `plugins/bk_selective_location_copy.py` | Copy specific X/Y/Z location components between objects or bones |
+
+### Standalone plugins (not included in the all-in-one install)
+
+| Plugin | File | Description |
+|--------|------|-------------|
+| **BK Crater** | `plugins/bk_crater_generator.py` | Game-ready crater meshes with FireGeo collision and LODs |
 
 ### Installing
 
