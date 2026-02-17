@@ -8,6 +8,12 @@ Requires **Blender 4.2+**
 
 Download the latest **[bk_reforger_addons.zip from Releases](https://github.com/steffenbk/bk-reforger-blender-addons/releases/latest)** to get every plugin in a single install. In Blender, go to **Edit > Preferences > Add-ons > Install from Disk** and select the zip.
 
+### Toggle Plugins On/Off
+
+You can enable or disable individual plugins from the addon preferences. Go to **Edit > Preferences > Add-ons**, find **BK Reforger Addons**, and expand it to see the toggle options.
+
+![Addon Preferences](https://i.imgur.com/TeOPsmo.png)
+
 ## Plugins
 
 ### Individual plugins (if you only want specific ones)
@@ -28,11 +34,10 @@ Download the latest **[bk_reforger_addons.zip from Releases](https://github.com/
 |--------|------|-------------|
 | **BK Crater** | `plugins/bk_crater_generator.py` | Game-ready crater meshes with FireGeo collision and LODs |
 
-### Installing
+### Installing individually
 
 1. In Blender, go to **Edit > Preferences > Add-ons > Install from Disk**
 2. For standalone `.py` plugins — select the file directly
-3. For **BK Arma Tools** — the zip file is already in the `plugins/` folder (`bk_arma_tools.zip`), install it directly as a zip.
 
 ## Other Resources
 
