@@ -1,9 +1,9 @@
 bl_info = {
-    "name": "Arma reforger Weapon Rig Replacer",
-    "author": "steffen",
+    "name": "BK Weapon Rig Replacer",
+    "author": "steffenbk",
     "version": (1, 0),
     "blender": (4, 2, 0),
-    "location": "N-panel in the 3D Viewport",
+    "location": "View3D > Sidebar > BK Rig Replacer",
     "description": "Replace weapons and magazines while preserving constraints",
     "category": "Animation",
     "support": 'COMMUNITY',

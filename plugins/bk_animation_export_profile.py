@@ -1,9 +1,9 @@
 bl_info = {
-    "name": "Arma Reforger Animation Export Profile Creator",
-    "author": "steffen",
+    "name": "BK Animation Export Profile",
+    "author": "steffenbk",
     "version": (1, 1, 0),
     "blender": (4, 2, 0),
-    "location": "3D Viewport > Sidebar > AR Animation Export",
+    "location": "3D Viewport > Sidebar > BK Anim Export",
     "description": "Create and manage animation export profiles (.apr) for Arma Reforger",
     "category": "Animation",
 }
@@ -827,7 +827,7 @@ class ARPROFILE_PT_main(Panel):
     bl_idname = "ARPROFILE_PT_main"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = "AR Animation Export"
+    bl_category = "BK Anim Export"
     
     def draw(self, context):
         layout = self.layout
@@ -902,7 +902,7 @@ class ARPROFILE_PT_tracks(Panel):
     bl_idname = "ARPROFILE_PT_tracks"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = "AR Animation Export"
+    bl_category = "BK Anim Export"
     bl_parent_id = "ARPROFILE_PT_main"
     
     def draw(self, context):

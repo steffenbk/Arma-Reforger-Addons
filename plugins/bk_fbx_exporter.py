@@ -7,11 +7,11 @@ from bpy.props import StringProperty, BoolProperty, EnumProperty, FloatProperty,
 from bpy_extras.io_utils import ExportHelper
 
 bl_info = {
-    "name": "Arma Reforger Asset Exporter",
-    "author": "Your Name",
+    "name": "BK Asset Exporter",
+    "author": "steffenbk",
     "version": (1, 4),
     "blender": (4, 0, 0),
-    "location": "File > Export > Arma Reforger Asset (.fbx) / Sidebar > AR Tools",
+    "location": "File > Export > Arma Reforger Asset (.fbx) / Sidebar > BK Exporter",
     "description": "Export assets for Arma Reforger Enfusion Engine",
     "warning": "",
     "doc_url": "",
@@ -869,11 +869,11 @@ class ExportArmaReforgerAsset(bpy.types.Operator, ExportHelper):
 # Add sidebar panel for quick access - simplified version
 class VIEW3D_PT_arma_reforger_tools(bpy.types.Panel):
     """Arma Reforger Tools Sidebar Panel"""
-    bl_label = "AR Export"
+    bl_label = "BK Exporter"
     bl_idname = "VIEW3D_PT_arma_reforger_tools"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'AR Export'  # This will create a new tab in the sidebar
+    bl_category = 'BK Exporter'
     
     def draw(self, context):
         layout = self.layout

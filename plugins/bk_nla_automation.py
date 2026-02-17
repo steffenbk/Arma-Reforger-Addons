@@ -4,11 +4,11 @@ from bpy.types import Panel, Operator, PropertyGroup
 import re
 
 bl_info = {
-    "name": "Arma Reforger NLA Automation (Generic)",
-    "author": "Your Name", 
+    "name": "BK NLA Automation",
+    "author": "steffenbk",
     "version": (2, 0, 1),
     "blender": (4, 2, 0),
-    "location": "View3D > Sidebar > AR NLA",
+    "location": "View3D > Sidebar > BK NLA",
     "description": "Automate NLA strip creation and action management for any Arma Reforger asset",
     "category": "Animation",
 }
@@ -576,7 +576,7 @@ class ARMA_PT_nla_panel(Panel):
     bl_idname = "ARMA_PT_nla_panel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = "AR NLA"
+    bl_category = "BK NLA"
     
     def draw(self, context):
         layout = self.layout

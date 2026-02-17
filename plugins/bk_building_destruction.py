@@ -2,15 +2,15 @@
 """
 Created on Tue Mar 25 14:30:45 2025
 
-@author: Steffen & Claude
+@author: steffenbk
 """
 
 bl_info = {
-    "name": "Arma Reforger Building Destruction Tools",
-    "author": "Steffen & Claude",
+    "name": "BK Building Destruction",
+    "author": "steffenbk",
     "version": (1, 1),
     "blender": (2, 93, 0),
-    "location": "View3D > Sidebar > AR Buildings",
+    "location": "View3D > Sidebar > BK Buildings",
     "description": "Tools for preparing destructible buildings for Arma Reforger",
     "warning": "",
     "doc_url": "",
@@ -947,11 +947,11 @@ class ARBUILDINGS_OT_manage_collections(bpy.types.Operator):
     
 class ARBUILDINGS_PT_panel(bpy.types.Panel):
     """Arma Reforger Building Destruction Panel"""
-    bl_label = "AR Buildings"
+    bl_label = "BK Buildings"
     bl_idname = "ARBUILDINGS_PT_panel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = 'AR Buildings'
+    bl_category = 'BK Buildings'
     
     def draw(self, context):
         layout = self.layout

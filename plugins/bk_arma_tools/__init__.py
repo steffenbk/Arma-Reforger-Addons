@@ -1,9 +1,9 @@
 bl_info = {
-    "name": "Steffenbk Arma Tools",
-    "author": "steffen",
+    "name": "BK Arma Tools",
+    "author": "steffenbk",
     "version": (3, 0),
     "blender": (4, 2, 0),
-    "location": "View3D > Sidebar > Bk Arma Tools",
+    "location": "View3D > Sidebar > BK Arma Tools",
     "description": "Enhanced tools for preparing and rigging vehicles and weapons for Arma Reforger",
     "category": "Object",
 }
