@@ -18,7 +18,8 @@ from .sockets import ARVEHICLES_OT_create_socket
 from .components import (
     ARVEHICLES_OT_add_to_object,
     ARVEHICLES_OT_separate_components,
-    ARVEHICLES_OT_parent_bones,  # ← ADD IT HERE
+    ARVEHICLES_OT_parent_bones,
+    ARVEHICLES_OT_add_bone_to_verts,
 )
 
 from .armature import (

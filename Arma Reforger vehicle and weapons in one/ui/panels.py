@@ -86,6 +86,7 @@ class ARVEHICLES_PT_panel(bpy.types.Panel):
         col.separator()
         col.label(text="Add Bones:")
         col.operator("arvehicles.create_bone", text="Add Bone").bone_type = 'custom'
+        col.operator("arvehicles.add_bone_to_verts", text="Add Bone to Selected Verts", icon='VERTEXSEL')
 
         col.separator()
         col.label(text="Bone Hierarchy:")

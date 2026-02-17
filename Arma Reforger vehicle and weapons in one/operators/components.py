@@ -504,6 +504,253 @@ class ARVEHICLES_OT_parent_bones(bpy.types.Operator):
 
 
 # ============================================================================
+# ADD BONE TO SELECTED VERTICES OPERATOR
+# ============================================================================
+class ARVEHICLES_OT_add_bone_to_verts(bpy.types.Operator):
+    bl_idname = "arvehicles.add_bone_to_verts"
+    bl_label = "Add Bone to Selected Verts"
+    bl_description = "Create a bone at the center of selected vertices, assign them to a vertex group with weight control"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    custom_bone_name: bpy.props.StringProperty(name="Bone Name", default="")
+    vertex_weight: bpy.props.FloatProperty(
+        name="Vertex Weight", default=1.0, min=0.0, max=1.0,
+        description="Weight to assign selected vertices in the vertex group"
+    )
+
+    # Bone direction options (same as Separate Component)
+    invert_bone_direction: bpy.props.BoolProperty(name="Invert Bone Direction", default=False)
+    use_world_direction: bpy.props.BoolProperty(name="Use World Direction", default=False)
+    world_direction: bpy.props.EnumProperty(
+        name="World Direction",
+        items=[
+            ('POS_Y', "+Y (Forward)", ""), ('NEG_Y', "-Y (Backward)", ""),
+            ('POS_X', "+X (Right)", ""),   ('NEG_X', "-X (Left)", ""),
+            ('POS_Z', "+Z (Up)", ""),      ('NEG_Z', "-Z (Down)", ""),
+        ],
+        default='POS_Y'
+    )
+    preserve_angle: bpy.props.BoolProperty(name="Preserve Angle", default=False)
+    bone_primary_axis: bpy.props.EnumProperty(
+        name="Primary Rotation Axis",
+        items=[('Y', "Y Axis (Default)", ""), ('X', "X Axis", ""), ('Z', "Z Axis", "")],
+        default='Y'
+    )
+    swap_yz_axes: bpy.props.BoolProperty(name="Swap Y<>Z Axes", default=False)
+    align_roll_to_axis: bpy.props.EnumProperty(
+        name="Align Roll To",
+        items=[
+            ('NONE', "Auto (Roll=0)", ""), ('WORLD_Z', "World Z (Up)", ""),
+            ('WORLD_X', "World X", ""),    ('WORLD_Y', "World Y", ""),
+        ],
+        default='WORLD_Z'
+    )
+
+    # Bone hierarchy
+    parent_to_specific_bone: bpy.props.BoolProperty(
+        name="Parent Bone to Specific Bone", default=False
+    )
+
+    def get_available_bones(self, context):
+        prefix = get_bone_prefix(context)
+        default_label = "w_root (Default)" if get_mode(context) == 'WEAPON' else "v_body (Default)"
+        items = [('NONE', default_label, "")]
+        for obj in bpy.data.objects:
+            if obj.type == 'ARMATURE':
+                for bone in obj.data.bones:
+                    items.append((bone.name, bone.name, ""))
+                break
+        return items
+
+    target_bone: bpy.props.EnumProperty(
+        name="Parent Bone", items=get_available_bones
+    )
+
+    # -------------------------------------------------------------------------
+    def execute(self, context):
+        if context.mode != 'EDIT_MESH':
+            self.report({'ERROR'}, "Must be in Edit Mode with vertices selected")
+            return {'CANCELLED'}
+
+        obj = context.active_object
+        mesh = obj.data
+        prefix = get_bone_prefix(context)
+        mode = get_mode(context)
+
+        bm = bmesh.from_edit_mesh(mesh)
+        selected_verts = [v for v in bm.verts if v.select]
+        if not selected_verts:
+            self.report({'ERROR'}, "No vertices selected")
+            return {'CANCELLED'}
+
+        # Calculate center of selected vertices
+        center = sum((v.co for v in selected_verts), Vector()) / len(selected_verts)
+        world_center = obj.matrix_world @ center
+
+        # Calculate average normal from connected faces of selected verts
+        connected_faces = set()
+        for v in selected_verts:
+            for f in v.link_faces:
+                connected_faces.add(f)
+        if connected_faces:
+            avg_normal = sum((f.normal for f in connected_faces), Vector()).normalized()
+        else:
+            avg_normal = Vector((0, 0, 1))
+        world_normal = (obj.matrix_world.to_3x3() @ avg_normal).normalized()
+
+        # Bone name
+        if self.custom_bone_name:
+            bone_name = _enforce_prefix(self.custom_bone_name, prefix)
+        else:
+            bone_name = _enforce_prefix("bone", prefix)
+
+        # Store selected vertex indices before leaving edit mode
+        vert_indices = [v.index for v in selected_verts]
+
+        # Find or create armature
+        armature = next((o for o in bpy.data.objects if o.type == 'ARMATURE'), None)
+        default_parent = 'w_root' if mode == 'WEAPON' else 'v_body'
+
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        if not armature:
+            arm_data = bpy.data.armatures.new("Armature")
+            armature = bpy.data.objects.new("Armature", arm_data)
+            context.collection.objects.link(armature)
+            context.view_layer.objects.active = armature
+            bpy.ops.object.mode_set(mode='EDIT')
+            rb = arm_data.edit_bones.new(default_parent if mode == 'WEAPON' else 'v_root')
+            rb.head = (0, 0, 0); rb.tail = (0, 0.2, 0)
+            if mode == 'VEHICLE':
+                bb = arm_data.edit_bones.new('v_body')
+                bb.head = (0, 0, 0.35); bb.tail = (0, 0.2, 0.35); bb.parent = rb
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+        # Deduplicate bone name
+        base_name = bone_name; counter = 1
+        while bone_name in armature.data.bones:
+            bone_name = f"{base_name}_{counter:02d}"; counter += 1
+
+        # Create the bone
+        context.view_layer.objects.active = armature
+        bpy.ops.object.mode_set(mode='EDIT')
+
+        bone = armature.data.edit_bones.new(bone_name)
+
+        # Parent bone
+        if self.parent_to_specific_bone and self.target_bone != 'NONE':
+            if self.target_bone in armature.data.edit_bones:
+                bone.parent = armature.data.edit_bones[self.target_bone]
+                bone.use_connect = False
+        else:
+            for pb in [default_parent, 'v_root']:
+                if pb in armature.data.edit_bones:
+                    bone.parent = armature.data.edit_bones[pb]; break
+
+        # Direction
+        if self.use_world_direction:
+            dmap = {
+                'POS_Y': Vector((0,1,0)), 'NEG_Y': Vector((0,-1,0)),
+                'POS_X': Vector((1,0,0)), 'NEG_X': Vector((-1,0,0)),
+                'POS_Z': Vector((0,0,1)), 'NEG_Z': Vector((0,0,-1)),
+            }
+            wd = dmap[self.world_direction]
+            if self.preserve_angle:
+                up = Vector((0,0,1)) if abs(wd.dot(Vector((0,0,1)))) < 0.9 else Vector((1,0,0))
+                right = wd.cross(up).normalized()
+                up = right.cross(wd).normalized()
+                bd = (wd * world_normal.dot(wd) + up * world_normal.dot(up)).normalized() * 0.2
+            else:
+                bd = wd * 0.2
+        else:
+            bd = world_normal * 0.2
+
+        if self.invert_bone_direction: bd = -bd
+        if self.bone_primary_axis == 'X': bd = Vector((bd.y, bd.z, bd.x))
+        elif self.bone_primary_axis == 'Z': bd = Vector((bd.z, bd.x, bd.y))
+
+        wh = world_center; wt = world_center + bd
+        if self.swap_yz_axes:
+            wh = Vector((wh.x, wh.z, wh.y)); wt = Vector((wt.x, wt.z, wt.y))
+
+        bone.head = wh; bone.tail = wt
+        rmap = {'WORLD_Z': Vector((0,0,1)), 'WORLD_X': Vector((1,0,0)), 'WORLD_Y': Vector((0,1,0))}
+        if self.align_roll_to_axis in rmap:
+            bone.align_roll(rmap[self.align_roll_to_axis])
+        else:
+            bone.roll = 0.0
+
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        # Create vertex group and assign vertices with weight
+        context.view_layer.objects.active = obj
+        vg = obj.vertex_groups.get(bone_name) or obj.vertex_groups.new(name=bone_name)
+        vg.add(vert_indices, self.vertex_weight, 'REPLACE')
+
+        # Add armature modifier if not present
+        if not any(mod.type == 'ARMATURE' and mod.object == armature for mod in obj.modifiers):
+            am = obj.modifiers.new(name="Armature", type='ARMATURE')
+            am.object = armature
+
+        # Return to edit mode so user can continue selecting
+        bpy.ops.object.mode_set(mode='EDIT')
+
+        self.report({'INFO'},
+            f"Created bone '{bone_name}', assigned {len(vert_indices)} verts (weight={self.vertex_weight:.2f})")
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        if context.mode != 'EDIT_MESH':
+            self.report({'ERROR'}, "Must be in Edit Mode")
+            return {'CANCELLED'}
+        bm = bmesh.from_edit_mesh(context.active_object.data)
+        if not any(v.select for v in bm.verts):
+            self.report({'ERROR'}, "No vertices selected")
+            return {'CANCELLED'}
+        return context.window_manager.invoke_props_dialog(self, width=420)
+
+    def draw(self, context):
+        layout = self.layout
+        mode = get_mode(context)
+        prefix = get_bone_prefix(context)
+
+        box = layout.box()
+        box.label(text="Bone Settings", icon='BONE_DATA')
+        box.prop(self, "custom_bone_name")
+        box.label(text=f"(prefix: {prefix})", icon='INFO')
+
+        box.separator()
+        box.prop(self, "vertex_weight", slider=True)
+
+        layout.separator()
+        box = layout.box()
+        box.label(text="Bone Direction:", icon='ORIENTATION_GLOBAL')
+        box.prop(self, "use_world_direction")
+        if self.use_world_direction:
+            box.prop(self, "world_direction")
+            box.prop(self, "preserve_angle")
+        else:
+            box.prop(self, "invert_bone_direction")
+
+        layout.separator()
+        box = layout.box()
+        box.label(text="Bone Orientation:", icon='DRIVER_ROTATIONAL_DIFFERENCE')
+        box.prop(self, "bone_primary_axis")
+        box.prop(self, "swap_yz_axes")
+        box.prop(self, "align_roll_to_axis")
+
+        layout.separator()
+        box = layout.box()
+        box.label(text="Bone Hierarchy:", icon='OUTLINER')
+        box.prop(self, "parent_to_specific_bone")
+        if self.parent_to_specific_bone:
+            box.prop(self, "target_bone", text="", icon='BONE_DATA')
+        else:
+            default = "w_root" if mode == 'WEAPON' else "v_body"
+            box.box().label(text=f"Default parent: {default}", icon='INFO')
+
+
+# ============================================================================
 # ADD TO OBJECT OPERATOR
 # ============================================================================
 class ARVEHICLES_OT_add_to_object(bpy.types.Operator):
