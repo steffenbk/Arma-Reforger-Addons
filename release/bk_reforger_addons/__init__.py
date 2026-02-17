@@ -14,6 +14,7 @@ submodules = [
     "bk_building_destruction",
     "bk_fbx_exporter",
     "bk_crater_generator",
+    "bk_selective_location_copy",
     "bk_arma_tools",
 ]
 
