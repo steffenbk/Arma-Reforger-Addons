@@ -150,9 +150,12 @@ class VIEW3D_PT_weight_gradient(Panel):
 
             if props.show_curve_editor:
                 brush = _get_curve_mapping()
-                box_curve.label(text="X = position (A\u2192B)   Y = weight value", icon='INFO')
-                box_curve.template_curve_mapping(brush, "curve")
-                box_curve.operator("mesh.wg_init_curve_from_anchors", icon='ANCHOR_CENTER')
+                if brush:
+                    box_curve.label(text="X = position (A\u2192B)   Y = weight value", icon='INFO')
+                    box_curve.template_curve_mapping(brush, "curve")
+                    box_curve.operator("mesh.wg_init_curve_from_anchors", icon='ANCHOR_CENTER')
+                else:
+                    box_curve.label(text="Apply a preset to initialise the curve", icon='INFO')
 
             # Presets
             sub_box = box_curve.box()

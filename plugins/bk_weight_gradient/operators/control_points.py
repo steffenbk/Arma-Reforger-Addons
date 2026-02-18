@@ -54,6 +54,8 @@ class MESH_OT_wg_cp_preset(Operator):
         # Auto-initialise segments if none exist
         if props.segments == 0:
             props.segments = 5
+        # Explicit sync in case the update callback didn't populate the collection
+        _sync_control_points(props)
         pts = props.control_points
         n = len(pts)
         _ensure_anchors(props)

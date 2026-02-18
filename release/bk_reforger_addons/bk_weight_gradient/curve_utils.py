@@ -43,7 +43,12 @@ _WG_BRUSH_NAME = ".WG_CustomCurve"
 
 
 def _get_curve_mapping():
-    """Get or create the hidden brush that hosts our custom CurveMapping."""
+    """Return the brush if it already exists, else None. Safe to call from draw()."""
+    return bpy.data.brushes.get(_WG_BRUSH_NAME)
+
+
+def _ensure_curve_mapping():
+    """Get or create the hidden brush. Must NOT be called from a draw() method."""
     brush = bpy.data.brushes.get(_WG_BRUSH_NAME)
     if not brush:
         brush = bpy.data.brushes.new(_WG_BRUSH_NAME, mode='SCULPT')
@@ -79,7 +84,7 @@ CURVE_PRESETS = {
 
 def _apply_curve_points(points):
     """Set the hidden brush curve to the given list of (x, y) points."""
-    brush = _get_curve_mapping()
+    brush = _ensure_curve_mapping()
     mapping = brush.curve
     curve = mapping.curves[0]
 
@@ -102,7 +107,7 @@ def _apply_curve_preset(preset_key):
 
 def _read_curve_points():
     """Read the current curve points from the brush as a list of (x, y) tuples."""
-    brush = _get_curve_mapping()
+    brush = _ensure_curve_mapping()
     curve = brush.curve.curves[0]
     pts = [(p.location[0], p.location[1]) for p in curve.points]
     pts.sort(key=lambda p: p[0])

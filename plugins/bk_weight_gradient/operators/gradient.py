@@ -6,7 +6,7 @@ import bpy
 from bpy.types import Operator
 from bpy.props import IntProperty
 
-from ..curve_utils import _get_curve_mapping
+from ..curve_utils import _ensure_curve_mapping
 from ..utils import _get_selected_verts, _ensure_anchors, _paint_anchor_verts, _build_stops, _parse_indices
 
 
@@ -95,7 +95,7 @@ class MESH_OT_wg_apply_gradient(Operator):
         power = props.curve_power
 
         if curve_mode == 'CURVE_GRAPH':
-            brush = _get_curve_mapping()
+            brush = _ensure_curve_mapping()
             mapping = brush.curve
             mapping.initialize()
             crv = mapping.curves[0]
