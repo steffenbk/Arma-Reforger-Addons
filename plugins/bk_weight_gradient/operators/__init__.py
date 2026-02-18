@@ -31,7 +31,7 @@ from .anchor_sets import (
 )
 from .control_points import (
     MESH_OT_wg_sync_points,
-    MESH_OT_wg_cp_preset,
+    MESH_OT_wg_reset_cp,
 )
 
 classes = (
@@ -57,5 +57,5 @@ classes = (
     MESH_OT_wg_delete_anchor_group,
     MESH_OT_wg_assign_to_group,
     MESH_OT_wg_sync_points,
-    MESH_OT_wg_cp_preset,
+    MESH_OT_wg_reset_cp,
 )

@@ -187,18 +187,11 @@ class VIEW3D_PT_weight_gradient(Panel):
             op.index = props.active_curve_index
 
         else:  # CONTROL_POINTS
-            # Presets — auto-fill CP weights to approximate the chosen shape
-            sub_box = box_curve.box()
-            sub_box.label(text="Presets:")
-            row = sub_box.row(align=True)
-            for key in ('LINEAR', 'EASE_IN', 'EASE_OUT', 'EASE_IN_OUT', 'SHARP'):
-                op = row.operator("mesh.wg_cp_preset", text=key.replace('_', ' ').title())
-                op.preset = key
-
-            # Segments + sync + mirror
+            # Segments + sync + mirror + reset
             row = box_curve.row(align=True)
             row.prop(props, "segments")
             row.operator("mesh.wg_sync_points", text="", icon='FILE_REFRESH')
+            row.operator("mesh.wg_reset_cp", text="", icon='LOOP_BACK')
             n_segs = props.segments
             n_pts = len(props.control_points)
             if n_pts >= 2:
