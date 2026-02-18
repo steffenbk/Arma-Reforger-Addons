@@ -243,8 +243,25 @@ def _on_mirror_toggle(props, context):
     _mirror_updating = False
 
 
+def _sync_control_points(props):
+    """Ensure control_points collection matches the segments count. Call before reading points."""
+    n_needed = props.segments
+    pts = props.control_points
+    wa = props.anchor_a_weight
+    wb = props.anchor_b_weight
+    n_total = n_needed + 1
+    while len(pts) < n_needed:
+        item = pts.add()
+        i = len(pts) - 1
+        t = (i + 1) / n_total
+        item.weight = round(wa + (wb - wa) * t, 4)
+    while len(pts) > n_needed:
+        pts.remove(len(pts) - 1)
+
+
 def _build_stops(props):
     """Build the list of (position, weight) stops from anchors + control points."""
+    _sync_control_points(props)
     wa = props.anchor_a_weight
     wb = props.anchor_b_weight
     n_pts = len(props.control_points)
@@ -410,6 +427,19 @@ class MESH_OT_wg_apply_gradient(Operator):
         return {'FINISHED'}
 
 
+class MESH_OT_wg_sync_points(Operator):
+    """Sync control points collection to match the segment count"""
+    bl_idname = "mesh.wg_sync_points"
+    bl_label = "Sync Control Points"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = context.scene.weight_gradient
+        _sync_control_points(props)
+        self.report({'INFO'}, f"Synced to {props.segments} control points")
+        return {'FINISHED'}
+
+
 class MESH_OT_wg_clear_anchors(Operator):
     """Clear both anchor points"""
     bl_idname = "mesh.wg_clear_anchors"
@@ -475,10 +505,15 @@ class VIEW3D_PT_weight_gradient(Panel):
         box = layout.box()
         row = box.row(align=True)
         row.prop(props, "segments")
+        row.operator("mesh.wg_sync_points", text="", icon='FILE_REFRESH')
         n_segs = props.segments
         n_pts = len(props.control_points)
         if n_pts >= 2:
             row.prop(props, "mirror", text="", icon='MOD_MIRROR', toggle=True)
+
+        # Show mismatch warning
+        if n_pts != n_segs:
+            box.label(text=f"Out of sync ({n_pts}/{n_segs}) — hit refresh", icon='ERROR')
 
         if n_pts > 0:
             n_total = n_pts + 1  # total segments
@@ -537,6 +572,7 @@ classes = (
     MESH_OT_wg_set_anchor_a,
     MESH_OT_wg_set_anchor_b,
     MESH_OT_wg_apply_gradient,
+    MESH_OT_wg_sync_points,
     MESH_OT_wg_clear_anchors,
     VIEW3D_PT_weight_gradient,
 )
