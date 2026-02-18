@@ -65,6 +65,81 @@ CURVE_FUNCS = {
     'SHARP': curve_sharp,
 }
 
+_WG_BRUSH_NAME = ".WG_CustomCurve"
+
+
+def _get_curve_mapping():
+    """Get or create the hidden brush that hosts our custom CurveMapping."""
+    brush = bpy.data.brushes.get(_WG_BRUSH_NAME)
+    if not brush:
+        brush = bpy.data.brushes.new(_WG_BRUSH_NAME, mode='SCULPT')
+        brush.use_fake_user = True
+        # Set default curve to linear (0,0) -> (1,1)
+        mapping = brush.curve
+        mapping.clip_min_x = 0.0
+        mapping.clip_min_y = 0.0
+        mapping.clip_max_x = 1.0
+        mapping.clip_max_y = 1.0
+        mapping.use_clip = True
+        # Reset to a simple linear curve
+        curve = mapping.curves[0]
+        # Remove default points and set to linear
+        while len(curve.points) > 2:
+            curve.points.remove(curve.points[1])
+        curve.points[0].location = (0.0, 0.0)
+        curve.points[-1].location = (1.0, 1.0)
+        mapping.update()
+    return brush
+
+
+# Curve preset definitions: list of (x, y) points
+CURVE_PRESETS = {
+    'LINEAR':    [(0.0, 0.0), (1.0, 1.0)],
+    'EASE_IN':   [(0.0, 0.0), (0.5, 0.1), (1.0, 1.0)],
+    'EASE_OUT':  [(0.0, 0.0), (0.5, 0.9), (1.0, 1.0)],
+    'S_CURVE':   [(0.0, 0.0), (0.25, 0.05), (0.75, 0.95), (1.0, 1.0)],
+    'BELL':      [(0.0, 0.0), (0.25, 0.8), (0.5, 1.0), (0.75, 0.8), (1.0, 0.0)],
+    'VALLEY':    [(0.0, 1.0), (0.25, 0.2), (0.5, 0.0), (0.75, 0.2), (1.0, 1.0)],
+    'STEPS_3':   [(0.0, 0.0), (0.33, 0.0), (0.34, 0.5), (0.66, 0.5), (0.67, 1.0), (1.0, 1.0)],
+    'SHARP_IN':  [(0.0, 0.0), (0.8, 0.0), (1.0, 1.0)],
+    'SHARP_OUT': [(0.0, 0.0), (0.2, 1.0), (1.0, 1.0)],
+}
+
+
+def _apply_curve_points(points):
+    """Set the hidden brush curve to the given list of (x, y) points."""
+    brush = _get_curve_mapping()
+    mapping = brush.curve
+    curve = mapping.curves[0]
+
+    # Remove all except 2 (minimum Blender allows)
+    while len(curve.points) > 2:
+        curve.points.remove(curve.points[1])
+
+    # Set first and last
+    curve.points[0].location = points[0]
+    curve.points[-1].location = points[-1]
+
+    # Add middle points
+    for pt in points[1:-1]:
+        curve.points.new(pt[0], pt[1])
+
+    mapping.update()
+
+
+def _apply_curve_preset(preset_key):
+    """Set the hidden brush curve to a preset shape."""
+    _apply_curve_points(CURVE_PRESETS[preset_key])
+
+
+def _read_curve_points():
+    """Read the current curve points from the brush as a list of (x, y) tuples."""
+    brush = _get_curve_mapping()
+    curve = brush.curve.curves[0]
+    pts = [(p.location[0], p.location[1]) for p in curve.points]
+    pts.sort(key=lambda p: p[0])
+    return pts
+
 
 # ---------------------------------------------------------------------------
 # Properties
@@ -100,6 +175,12 @@ def _on_cp_weight_update(self, context):
     _mirror_updating = True
     pts[mirror_idx].weight = self.weight
     _mirror_updating = False
+
+
+class WG_SavedCurve(PropertyGroup):
+    name: bpy.props.StringProperty(name="Name", default="Curve")
+    points_json: bpy.props.StringProperty(name="Points", default="[]")
+    point_count: IntProperty(name="Points", default=0)
 
 
 class WG_SavedSelection(PropertyGroup):
@@ -184,6 +265,7 @@ class WeightGradientProperties(PropertyGroup):
             ('EASE_IN_OUT', "Ease In/Out", "Smooth S-curve (smoothstep)"),
             ('SHARP', "Sharp", "Fast ramp then plateau (sqrt)"),
             ('CUSTOM_POWER', "Custom Power", "t raised to a custom exponent"),
+            ('CUSTOM_CURVE', "Custom Curve", "User-defined curve with editable points"),
         ],
         default='LINEAR',
     )
@@ -192,6 +274,9 @@ class WeightGradientProperties(PropertyGroup):
         name="Power", default=2.0, min=0.1, max=10.0,
         description="Exponent for the custom power curve",
     )
+
+    saved_curves: CollectionProperty(type=WG_SavedCurve)
+    active_curve_index: IntProperty(name="Active Curve", default=0)
 
     saved_selections: CollectionProperty(type=WG_SavedSelection)
     active_selection_index: IntProperty(name="Active Selection", default=0)
@@ -386,10 +471,19 @@ class MESH_OT_wg_apply_gradient(Operator):
 
         # Curve function ------------------------------------------------
         curve = props.curve_type
+        use_direct_curve = False
+
         if curve == 'CUSTOM_POWER':
             power = props.curve_power
             def apply_curve(t):
                 return curve_custom_power(t, power)
+        elif curve == 'CUSTOM_CURVE':
+            # Direct mode: curve Y = final weight value
+            use_direct_curve = True
+            brush = _get_curve_mapping()
+            mapping = brush.curve
+            mapping.initialize()
+            crv = mapping.curves[0]
         else:
             apply_curve = CURVE_FUNCS[curve]
 
@@ -405,28 +499,32 @@ class MESH_OT_wg_apply_gradient(Operator):
             if not v.select:
                 continue
 
-            if v.index in anchor_a_ids:
-                weight = wa
-            elif v.index in anchor_b_ids:
-                weight = wb
-            else:
-                v_world = obj.matrix_world @ v.co
-                # Project onto line A->B  (t: 0 at A, 1 at B)
-                t = (v_world - a_co).dot(ab) / ab_len_sq
-                t = max(0.0, min(1.0, t))
+            v_world = obj.matrix_world @ v.co
+            t = (v_world - a_co).dot(ab) / ab_len_sq
+            t = max(0.0, min(1.0, t))
 
-                # Find which segment this t falls in
-                weight = stops[-1][1]  # fallback
-                for i in range(len(stops) - 1):
-                    t0, w0 = stops[i]
-                    t1, w1 = stops[i + 1]
-                    if t <= t1 or i == len(stops) - 2:
-                        seg_len = t1 - t0
-                        seg_t = (t - t0) / seg_len if seg_len > 1e-10 else 0.0
-                        seg_t = max(0.0, min(1.0, seg_t))
-                        seg_t = apply_curve(seg_t)
-                        weight = w0 + (w1 - w0) * seg_t
-                        break
+            if use_direct_curve:
+                # Custom curve: Y value IS the weight
+                weight = mapping.evaluate(crv, t)
+                weight = max(0.0, min(1.0, weight))
+            else:
+                if v.index in anchor_a_ids:
+                    weight = wa
+                elif v.index in anchor_b_ids:
+                    weight = wb
+                else:
+                    # Find which segment this t falls in
+                    weight = stops[-1][1]  # fallback
+                    for i in range(len(stops) - 1):
+                        t0, w0 = stops[i]
+                        t1, w1 = stops[i + 1]
+                        if t <= t1 or i == len(stops) - 2:
+                            seg_len = t1 - t0
+                            seg_t = (t - t0) / seg_len if seg_len > 1e-10 else 0.0
+                            seg_t = max(0.0, min(1.0, seg_t))
+                            seg_t = apply_curve(seg_t)
+                            weight = w0 + (w1 - w0) * seg_t
+                            break
 
             vg.add([v.index], weight, 'REPLACE')
             count += 1
@@ -434,6 +532,120 @@ class MESH_OT_wg_apply_gradient(Operator):
         # Return to edit mode -------------------------------------------
         bpy.ops.object.mode_set(mode='EDIT')
         self.report({'INFO'}, f"Gradient applied to {count} vertices")
+        return {'FINISHED'}
+
+
+class MESH_OT_wg_init_curve_from_anchors(Operator):
+    """Set curve endpoints to match anchor weights (left = Weight A, right = Weight B)"""
+    bl_idname = "mesh.wg_init_curve_from_anchors"
+    bl_label = "Init from Anchors"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        props = context.scene.weight_gradient
+        wa = props.anchor_a_weight
+        wb = props.anchor_b_weight
+        _apply_curve_points([(0.0, wa), (1.0, wb)])
+        self.report({'INFO'}, f"Curve set: A={wa:.2f} to B={wb:.2f}")
+        return {'FINISHED'}
+
+
+class MESH_OT_wg_save_curve(Operator):
+    """Save the current custom curve"""
+    bl_idname = "mesh.wg_save_curve"
+    bl_label = "Save Curve"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    name: bpy.props.StringProperty(name="Name", default="My Curve")
+
+    def invoke(self, context, event):
+        props = context.scene.weight_gradient
+        self.name = f"Curve {len(props.saved_curves) + 1}"
+        return context.window_manager.invoke_props_dialog(self)
+
+    def execute(self, context):
+        props = context.scene.weight_gradient
+        pts = _read_curve_points()
+        slot = props.saved_curves.add()
+        slot.name = self.name
+        slot.points_json = json.dumps(pts)
+        slot.point_count = len(pts)
+        props.active_curve_index = len(props.saved_curves) - 1
+        self.report({'INFO'}, f"Saved curve '{self.name}' ({len(pts)} points)")
+        return {'FINISHED'}
+
+
+class MESH_OT_wg_load_curve(Operator):
+    """Load a saved custom curve"""
+    bl_idname = "mesh.wg_load_curve"
+    bl_label = "Load Curve"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    index: IntProperty(name="Slot Index", default=0)
+
+    def execute(self, context):
+        props = context.scene.weight_gradient
+        if self.index < 0 or self.index >= len(props.saved_curves):
+            self.report({'WARNING'}, "Invalid curve slot")
+            return {'CANCELLED'}
+        slot = props.saved_curves[self.index]
+        try:
+            pts = [tuple(p) for p in json.loads(slot.points_json)]
+        except (json.JSONDecodeError, TypeError):
+            self.report({'WARNING'}, "Corrupt curve data")
+            return {'CANCELLED'}
+        if len(pts) < 2:
+            self.report({'WARNING'}, "Curve needs at least 2 points")
+            return {'CANCELLED'}
+        _apply_curve_points(pts)
+        props.active_curve_index = self.index
+        self.report({'INFO'}, f"Loaded curve '{slot.name}'")
+        return {'FINISHED'}
+
+
+class MESH_OT_wg_delete_curve(Operator):
+    """Delete a saved custom curve"""
+    bl_idname = "mesh.wg_delete_curve"
+    bl_label = "Delete Curve"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    index: IntProperty(name="Slot Index", default=0)
+
+    def execute(self, context):
+        props = context.scene.weight_gradient
+        if self.index < 0 or self.index >= len(props.saved_curves):
+            return {'CANCELLED'}
+        name = props.saved_curves[self.index].name
+        props.saved_curves.remove(self.index)
+        if props.active_curve_index >= len(props.saved_curves):
+            props.active_curve_index = max(0, len(props.saved_curves) - 1)
+        self.report({'INFO'}, f"Deleted curve '{name}'")
+        return {'FINISHED'}
+
+
+class MESH_OT_wg_curve_preset(Operator):
+    """Apply a preset shape to the custom curve"""
+    bl_idname = "mesh.wg_curve_preset"
+    bl_label = "Curve Preset"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    preset: EnumProperty(
+        name="Preset",
+        items=[
+            ('LINEAR',    "Linear",    "Straight line"),
+            ('EASE_IN',   "Ease In",   "Slow start, fast end"),
+            ('EASE_OUT',  "Ease Out",  "Fast start, slow end"),
+            ('S_CURVE',   "S-Curve",   "Smooth sigmoid"),
+            ('BELL',      "Bell",      "Peak in the middle"),
+            ('VALLEY',    "Valley",    "Dip in the middle"),
+            ('STEPS_3',   "3 Steps",   "Staircase with 3 levels"),
+            ('SHARP_IN',  "Sharp In",  "Flat then sudden ramp"),
+            ('SHARP_OUT', "Sharp Out", "Sudden ramp then flat"),
+        ],
+    )
+
+    def execute(self, context):
+        _apply_curve_preset(self.preset)
         return {'FINISHED'}
 
 
@@ -595,6 +807,17 @@ class MESH_OT_wg_clear_anchors(Operator):
 # Panel
 # ---------------------------------------------------------------------------
 
+class WG_UL_saved_curves(bpy.types.UIList):
+    bl_idname = "WG_UL_saved_curves"
+
+    def draw_item(self, context, layout, data, item, icon, active_data, active_property, index):
+        row = layout.row(align=True)
+        row.prop(item, "name", text="", emboss=False, icon='CURVE_DATA')
+        row.label(text=f"({item.point_count}pt)")
+        op_del = row.operator("mesh.wg_delete_curve", text="", icon='X')
+        op_del.index = index
+
+
 class WG_UL_saved_selections(bpy.types.UIList):
     bl_idname = "WG_UL_saved_selections"
 
@@ -695,6 +918,43 @@ class VIEW3D_PT_weight_gradient(Panel):
         layout.prop(props, "curve_type")
         if props.curve_type == 'CUSTOM_POWER':
             layout.prop(props, "curve_power", slider=True)
+        elif props.curve_type == 'CUSTOM_CURVE':
+            brush = _get_curve_mapping()
+            box_cv = layout.box()
+            box_cv.label(text="X = position (A\u2192B)   Y = weight value", icon='INFO')
+            box_cv.template_curve_mapping(brush, "curve")
+            box_cv.operator("mesh.wg_init_curve_from_anchors", icon='ANCHOR_CENTER')
+
+            # Presets
+            box = layout.box()
+            box.label(text="Presets:")
+            row = box.row(align=True)
+            for key in ('LINEAR', 'EASE_IN', 'EASE_OUT', 'S_CURVE'):
+                label = key.replace('_', ' ').title()
+                op = row.operator("mesh.wg_curve_preset", text=label)
+                op.preset = key
+            row = box.row(align=True)
+            for key in ('BELL', 'VALLEY', 'STEPS_3', 'SHARP_IN', 'SHARP_OUT'):
+                label = key.replace('_', ' ').title()
+                op = row.operator("mesh.wg_curve_preset", text=label)
+                op.preset = key
+
+            # Saved curves
+            box = layout.box()
+            row = box.row(align=True)
+            row.label(text="Saved Curves", icon='CURVE_DATA')
+            box.template_list(
+                "WG_UL_saved_curves", "",
+                props, "saved_curves",
+                props, "active_curve_index",
+                rows=2, maxrows=5,
+            )
+            row = box.row(align=True)
+            row.operator("mesh.wg_save_curve", text="Save", icon='ADD')
+            sub = row.row(align=True)
+            sub.enabled = len(props.saved_curves) > 0
+            op = sub.operator("mesh.wg_load_curve", text="Load", icon='CHECKMARK')
+            op.index = props.active_curve_index
 
         layout.separator()
 
@@ -731,13 +991,20 @@ class VIEW3D_PT_weight_gradient(Panel):
 # ---------------------------------------------------------------------------
 
 classes = (
+    WG_SavedCurve,
     WG_SavedSelection,
     WG_ControlPoint,
     WeightGradientProperties,
+    WG_UL_saved_curves,
     WG_UL_saved_selections,
     MESH_OT_wg_set_anchor_a,
     MESH_OT_wg_set_anchor_b,
     MESH_OT_wg_apply_gradient,
+    MESH_OT_wg_init_curve_from_anchors,
+    MESH_OT_wg_save_curve,
+    MESH_OT_wg_load_curve,
+    MESH_OT_wg_delete_curve,
+    MESH_OT_wg_curve_preset,
     MESH_OT_wg_sync_points,
     MESH_OT_wg_save_selection,
     MESH_OT_wg_load_selection,
