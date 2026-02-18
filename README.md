@@ -23,29 +23,22 @@ You can enable or disable individual plugins from the addon preferences. Go to *
 
 ## Plugins
 
-### Individual plugins (if you only want specific ones)
+| Plugin | Description |
+|--------|-------------|
+| **BK Arma Tools** | Vehicle and weapon rigging, collisions, sockets, LODs, presets |
+| **BK NLA Automation** | Automate NLA strip creation and action management |
+| **BK Animation Export Profile** | Create and manage `.apr` animation export profiles |
+| **BK Weapon Rig Replacer** | Replace weapons/magazines while preserving constraints |
+| **BK Building Destruction** | Tools for preparing destructible buildings |
+| **BK Asset Exporter** | FBX export tailored for Enfusion Engine |
+| **BK Selective Location Copy** | Copy specific X/Y/Z location components between objects or bones |
+| **BK Weight Gradient** | Apply weight gradients between anchor vertices with selectable curves |
+
+### Standalone (not included in the all-in-one)
 
 | Plugin | File | Description |
 |--------|------|-------------|
-| **BK Arma Tools** | `plugins/bk_arma_tools/` | Vehicle and weapon rigging, collisions, sockets, LODs, presets — **install as zip** (see below) |
-| **BK NLA Automation** | `plugins/bk_nla_automation.py` | Automate NLA strip creation and action management |
-| **BK Animation Export Profile** | `plugins/bk_animation_export_profile.py` | Create and manage `.apr` animation export profiles |
-| **BK Weapon Rig Replacer** | `plugins/bk_weapon_rig_replacer.py` | Replace weapons/magazines while preserving constraints |
-| **BK Building Destruction** | `plugins/bk_building_destruction.py` | Tools for preparing destructible buildings |
-| **BK Asset Exporter** | `plugins/bk_fbx_exporter.py` | FBX export tailored for Enfusion Engine |
-| **BK Selective Location Copy** | `plugins/bk_selective_location_copy.py` | Copy specific X/Y/Z location components between objects or bones |
-| **BK Weight Gradient** | `plugins/bk_weight_gradient.py` | Apply weight gradients between anchor vertices with selectable curves |
-
-### Standalone plugins (not included in the all-in-one install)
-
-| Plugin | File | Description |
-|--------|------|-------------|
-| **BK Crater** | `plugins/bk_crater_generator.py` | Game-ready crater meshes with FireGeo collision and LODs |
-
-### Installing individually
-
-1. In Blender, go to **Edit > Preferences > Add-ons > Install from Disk**
-2. For standalone `.py` plugins — select the file directly
+| **BK Crater** | `plugins/bk_crater_generator.py` | Game-ready crater meshes with FireGeo collision and LODs — install the `.py` file directly |
 
 ---
 
@@ -287,9 +280,9 @@ Set 2 to 10 anchor points along your mesh. The first and last anchors define the
 
 #### Saving & Loading
 
-- **Saved Anchors** — Store and recall full anchor setups (positions, weights, vertex assignments).
+- **Saved Anchors** — Store and recall vertex selections used as anchor points. Supports named groups to organise multiple anchor sets.
 - **Saved Curves** — Store custom curve shapes for reuse.
-- **Saved Selections** — Store vertex selections for quick recall.
+- **Saved Gradient Vertices** — Store vertex selections for quick recall. Supports named groups.
 
 #### Custom Curve Editor
 
