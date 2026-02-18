@@ -4,7 +4,7 @@ import bpy
 from bpy.types import Operator
 from bpy.props import StringProperty
 
-from ..utils import _sync_control_points
+from ..utils import _sync_control_points, _ensure_anchors
 
 
 def _lerp(a, b, x):
@@ -51,11 +51,12 @@ class MESH_OT_wg_cp_preset(Operator):
 
     def execute(self, context):
         props = context.scene.weight_gradient
+        # Auto-initialise segments if none exist
+        if props.segments == 0:
+            props.segments = 5
         pts = props.control_points
         n = len(pts)
-        if n == 0:
-            self.report({'WARNING'}, "No control points — increase Segments first")
-            return {'CANCELLED'}
+        _ensure_anchors(props)
         anchors = props.anchors
         w_a = anchors[0].weight if len(anchors) > 0 else 1.0
         w_b = anchors[-1].weight if len(anchors) > 1 else 0.0
