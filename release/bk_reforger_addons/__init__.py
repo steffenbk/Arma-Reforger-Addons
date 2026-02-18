@@ -1,7 +1,7 @@
 bl_info = {
     "name": "BK Reforger Addons",
     "author": "steffenbk",
-    "version": (1, 1, 0),
+    "version": (1, 2, 0),
     "blender": (4, 2, 0),
     "description": "All-in-one Arma Reforger Blender tools by steffenbk",
     "category": "Object",
@@ -21,6 +21,7 @@ _submodule_info = {
     "bk_building_destruction":    ("BK Building Destruction",     True),
     "bk_fbx_exporter":            ("BK Asset Exporter",          True),
     "bk_selective_location_copy": ("BK Selective Location Copy",  True),
+    "bk_weight_gradient":         ("BK Weight Gradient",          True),
 }
 
 _modules = {}   # name -> module
@@ -99,6 +100,11 @@ class BKReforgerPreferences(AddonPreferences):
         name="BK Selective Location Copy",
         default=True,
         update=_make_update("bk_selective_location_copy"),
+    )
+    bk_weight_gradient: BoolProperty(
+        name="BK Weight Gradient",
+        default=True,
+        update=_make_update("bk_weight_gradient"),
     )
 
     def draw(self, context):
