@@ -138,23 +138,23 @@ class WeightGradientProperties(PropertyGroup):
         update=_on_anchor_count_update,
     )
 
-    curve_type: EnumProperty(
-        name="Curve",
+    curve_mode: EnumProperty(
+        name="Mode",
         items=[
-            ('LINEAR', "Linear", "Straight-line interpolation"),
-            ('EASE_IN', "Ease In", "Slow start, fast end (t squared)"),
-            ('EASE_OUT', "Ease Out", "Fast start, slow end"),
-            ('EASE_IN_OUT', "Ease In/Out", "Smooth S-curve (smoothstep)"),
-            ('SHARP', "Sharp", "Fast ramp then plateau (sqrt)"),
-            ('CUSTOM_POWER', "Custom Power", "t raised to a custom exponent"),
-            ('CUSTOM_CURVE', "Custom Curve", "User-defined curve with editable points"),
+            ('CONTROL_POINTS', "Control Points",
+             "Shape the gradient using manually placed weight stops"),
+            ('CURVE_GRAPH', "Curve Graph",
+             "Draw the gradient shape using a graphical curve editor"),
         ],
-        default='LINEAR',
+        default='CONTROL_POINTS',
     )
 
     curve_power: FloatProperty(
-        name="Power", default=2.0, min=0.1, max=10.0,
-        description="Exponent for the custom power curve",
+        name="Power", default=1.0, min=0.1, max=10.0,
+        description=(
+            "Post-process exponent on the final weight. "
+            "1.0 = no effect, >1 = slow start / rush at end, <1 = fast start / plateau"
+        ),
     )
 
     show_curve_editor: BoolProperty(

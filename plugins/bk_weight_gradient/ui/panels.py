@@ -136,12 +136,13 @@ class VIEW3D_PT_weight_gradient(Panel):
 
         # -- Curve & Control Points -------------------------------------
         box_curve = layout.box()
-        box_curve.prop(props, "curve_type")
 
-        if props.curve_type == 'CUSTOM_POWER':
-            box_curve.prop(props, "curve_power", slider=True)
+        # Main mode toggle: Control Points | Curve Graph
+        row = box_curve.row(align=True)
+        row.prop(props, "curve_mode", expand=True)
 
-        if props.curve_type == 'CUSTOM_CURVE':
+        if props.curve_mode == 'CURVE_GRAPH':
+            # Collapsible graphical editor
             row = box_curve.row(align=True)
             icon = 'TRIA_DOWN' if props.show_curve_editor else 'TRIA_RIGHT'
             row.prop(props, "show_curve_editor", text="Curve Editor",
@@ -153,39 +154,45 @@ class VIEW3D_PT_weight_gradient(Panel):
                 box_curve.template_curve_mapping(brush, "curve")
                 box_curve.operator("mesh.wg_init_curve_from_anchors", icon='ANCHOR_CENTER')
 
-                # Presets
-                sub_box = box_curve.box()
-                sub_box.label(text="Presets:")
-                row = sub_box.row(align=True)
-                for key in ('LINEAR', 'EASE_IN', 'EASE_OUT', 'S_CURVE'):
-                    label = key.replace('_', ' ').title()
-                    op = row.operator("mesh.wg_curve_preset", text=label)
-                    op.preset = key
-                row = sub_box.row(align=True)
-                for key in ('BELL', 'VALLEY', 'STEPS_3', 'SHARP_IN', 'SHARP_OUT'):
-                    label = key.replace('_', ' ').title()
-                    op = row.operator("mesh.wg_curve_preset", text=label)
-                    op.preset = key
+            # Presets
+            sub_box = box_curve.box()
+            sub_box.label(text="Presets:")
+            row = sub_box.row(align=True)
+            for key in ('LINEAR', 'EASE_IN', 'EASE_OUT', 'S_CURVE'):
+                op = row.operator("mesh.wg_curve_preset", text=key.replace('_', ' ').title())
+                op.preset = key
+            row = sub_box.row(align=True)
+            for key in ('BELL', 'VALLEY', 'STEPS_3', 'SHARP_IN', 'SHARP_OUT'):
+                op = row.operator("mesh.wg_curve_preset", text=key.replace('_', ' ').title())
+                op.preset = key
 
-                # Saved curves
-                sub_box = box_curve.box()
-                row = sub_box.row(align=True)
-                row.label(text="Saved Curves", icon='CURVE_DATA')
-                sub_box.template_list(
-                    "WG_UL_saved_curves", "",
-                    props, "saved_curves",
-                    props, "active_curve_index",
-                    rows=2, maxrows=5,
-                )
-                row = sub_box.row(align=True)
-                row.operator("mesh.wg_save_curve", text="Save", icon='ADD')
-                sub = row.row(align=True)
-                sub.enabled = len(props.saved_curves) > 0
-                op = sub.operator("mesh.wg_load_curve", text="Load", icon='CHECKMARK')
-                op.index = props.active_curve_index
+            # Saved curves
+            sub_box = box_curve.box()
+            row = sub_box.row(align=True)
+            row.label(text="Saved Curves", icon='CURVE_DATA')
+            sub_box.template_list(
+                "WG_UL_saved_curves", "",
+                props, "saved_curves",
+                props, "active_curve_index",
+                rows=2, maxrows=5,
+            )
+            row = sub_box.row(align=True)
+            row.operator("mesh.wg_save_curve", text="Save", icon='ADD')
+            sub = row.row(align=True)
+            sub.enabled = len(props.saved_curves) > 0
+            op = sub.operator("mesh.wg_load_curve", text="Load", icon='CHECKMARK')
+            op.index = props.active_curve_index
 
-        else:
-            # Control points — only relevant for mathematical curve types
+        else:  # CONTROL_POINTS
+            # Presets — auto-fill CP weights to approximate the chosen shape
+            sub_box = box_curve.box()
+            sub_box.label(text="Presets:")
+            row = sub_box.row(align=True)
+            for key in ('LINEAR', 'EASE_IN', 'EASE_OUT', 'EASE_IN_OUT', 'SHARP'):
+                op = row.operator("mesh.wg_cp_preset", text=key.replace('_', ' ').title())
+                op.preset = key
+
+            # Segments + sync + mirror
             row = box_curve.row(align=True)
             row.prop(props, "segments")
             row.operator("mesh.wg_sync_points", text="", icon='FILE_REFRESH')
@@ -220,6 +227,10 @@ class VIEW3D_PT_weight_gradient(Panel):
                         r.prop(cp, "weight", slider=True, text=f"{pct}% (mid)")
                     else:
                         r.prop(cp, "weight", slider=True, text=f"{pct}%")
+
+        # -- Power (always accessible) ----------------------------------
+        box_power = layout.box()
+        box_power.prop(props, "curve_power", slider=True)
 
         layout.separator()
 

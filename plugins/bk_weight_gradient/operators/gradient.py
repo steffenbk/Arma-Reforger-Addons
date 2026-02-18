@@ -6,7 +6,7 @@ import bpy
 from bpy.types import Operator
 from bpy.props import IntProperty
 
-from ..curve_utils import CURVE_FUNCS, curve_custom_power, _get_curve_mapping
+from ..curve_utils import _get_curve_mapping
 from ..utils import _get_selected_verts, _ensure_anchors, _paint_anchor_verts, _build_stops, _parse_indices
 
 
@@ -91,21 +91,14 @@ class MESH_OT_wg_apply_gradient(Operator):
                 for idx in _parse_indices(a.indices_json):
                     anchor_indices[idx] = a.weight
 
-        curve = props.curve_type
-        use_direct_curve = False
+        curve_mode = props.curve_mode
+        power = props.curve_power
 
-        if curve == 'CUSTOM_POWER':
-            power = props.curve_power
-            def apply_curve(t):
-                return curve_custom_power(t, power)
-        elif curve == 'CUSTOM_CURVE':
-            use_direct_curve = True
+        if curve_mode == 'CURVE_GRAPH':
             brush = _get_curve_mapping()
             mapping = brush.curve
             mapping.initialize()
             crv = mapping.curves[0]
-        else:
-            apply_curve = CURVE_FUNCS[curve]
 
         bpy.ops.object.mode_set(mode='OBJECT')
 
@@ -118,10 +111,10 @@ class MESH_OT_wg_apply_gradient(Operator):
             t = (v_world - a_co).dot(ab) / ab_len_sq
             t = max(0.0, min(1.0, t))
 
-            if use_direct_curve:
+            if curve_mode == 'CURVE_GRAPH':
                 weight = mapping.evaluate(crv, t)
                 weight = max(0.0, min(1.0, weight))
-            else:
+            else:  # CONTROL_POINTS — linear lerp between stops
                 if v.index in anchor_indices:
                     weight = anchor_indices[v.index]
                 else:
@@ -133,9 +126,12 @@ class MESH_OT_wg_apply_gradient(Operator):
                             seg_len = t1 - t0
                             seg_t = (t - t0) / seg_len if seg_len > 1e-10 else 0.0
                             seg_t = max(0.0, min(1.0, seg_t))
-                            seg_t = apply_curve(seg_t)
                             weight = w0 + (w1 - w0) * seg_t
                             break
+
+            # Power post-processing (1.0 = no effect)
+            if abs(power - 1.0) > 1e-6:
+                weight = max(0.0, min(1.0, weight)) ** power
 
             vg.add([v.index], weight, 'REPLACE')
             count += 1
