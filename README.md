@@ -6,6 +6,11 @@ Requires **Blender 4.2+**
 
 > **Important:** After installing or updating the addon, **restart Blender** before using the plugins. Some features register handlers and properties that require a fresh session to work correctly.
 
+## Links
+
+- YouTube: https://www.youtube.com/@steffenbk1
+- If you'd like to support this work, no obligation — I'm just doing this for fun:
+  [PayPal Donation](https://www.paypal.com/donate/?business=48EMTMZWYCXVN&no_recurring=0&item_name=Thanks+for+all+support%21+%3AD&currency_code=NOK)
 ## All-in-One Install
 
 Download the latest **[bk_reforger_addons.zip from Releases](https://github.com/steffenbk/bk-reforger-blender-addons/releases/latest)** to get every plugin in a single install. In Blender, go to **Edit > Preferences > Add-ons > Install from Disk** and select the zip.
@@ -332,8 +337,3 @@ Generates game-ready crater meshes with realistic geometry, dual materials, coll
 
 The `archive/` folder contains older versions of plugins kept for reference.
 
-## Links
-
-- YouTube: https://www.youtube.com/@steffenbk1
-- If you'd like to support this work, no obligation — I'm just doing this for fun:
-  [PayPal Donation](https://www.paypal.com/donate/?business=48EMTMZWYCXVN&no_recurring=0&item_name=Thanks+for+all+support%21+%3AD&currency_code=NOK)
