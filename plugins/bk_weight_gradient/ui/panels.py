@@ -126,43 +126,6 @@ class VIEW3D_PT_weight_gradient(Panel):
                 row.label(text="Not set", icon='X')
             box.prop(a, "weight", slider=True)
 
-        # -- Control Points ---------------------------------------------
-        box = layout.box()
-        row = box.row(align=True)
-        row.prop(props, "segments")
-        row.operator("mesh.wg_sync_points", text="", icon='FILE_REFRESH')
-        n_segs = props.segments
-        n_pts = len(props.control_points)
-        if n_pts >= 2:
-            row.prop(props, "mirror", text="", icon='MOD_MIRROR', toggle=True)
-
-        if n_pts != n_segs:
-            box.label(text=f"Out of sync ({n_pts}/{n_segs}) — hit refresh", icon='ERROR')
-
-        if n_pts > 0:
-            n_total = n_pts + 1
-            mirroring = props.mirror and n_pts >= 2
-            for i, cp in enumerate(props.control_points):
-                pct = int(round((i + 1) / n_total * 100))
-                mirror_idx = n_pts - 1 - i
-                is_middle = (mirror_idx == i)
-                is_mirrored_slave = mirroring and i > mirror_idx
-
-                r = box.row(align=True)
-                if mirroring and not is_middle and not is_mirrored_slave:
-                    pct2 = int(round((mirror_idx + 1) / n_total * 100))
-                    r.label(text="", icon='LINKED')
-                    r.prop(cp, "weight", slider=True, text=f"{pct}% + {pct2}%")
-                elif is_mirrored_slave:
-                    r.enabled = False
-                    r.label(text="", icon='LINKED')
-                    r.prop(cp, "weight", slider=True, text=f"{pct}%")
-                elif mirroring and is_middle:
-                    r.label(text="", icon='DECORATE')
-                    r.prop(cp, "weight", slider=True, text=f"{pct}% (mid)")
-                else:
-                    r.prop(cp, "weight", slider=True, text=f"{pct}%")
-
         layout.separator()
 
         # -- Vertex group -----------------------------------------------
@@ -171,25 +134,27 @@ class VIEW3D_PT_weight_gradient(Panel):
         else:
             layout.label(text="No vertex groups", icon='ERROR')
 
-        # -- Curve type -------------------------------------------------
-        layout.prop(props, "curve_type")
+        # -- Curve & Control Points -------------------------------------
+        box_curve = layout.box()
+        box_curve.prop(props, "curve_type")
+
         if props.curve_type == 'CUSTOM_POWER':
-            layout.prop(props, "curve_power", slider=True)
-        elif props.curve_type == 'CUSTOM_CURVE':
-            box_cv = layout.box()
-            row = box_cv.row(align=True)
+            box_curve.prop(props, "curve_power", slider=True)
+
+        if props.curve_type == 'CUSTOM_CURVE':
+            row = box_curve.row(align=True)
             icon = 'TRIA_DOWN' if props.show_curve_editor else 'TRIA_RIGHT'
             row.prop(props, "show_curve_editor", text="Curve Editor",
                      icon=icon, emboss=False)
 
             if props.show_curve_editor:
                 brush = _get_curve_mapping()
-                box_cv.label(text="X = position (A\u2192B)   Y = weight value", icon='INFO')
-                box_cv.template_curve_mapping(brush, "curve")
-                box_cv.operator("mesh.wg_init_curve_from_anchors", icon='ANCHOR_CENTER')
+                box_curve.label(text="X = position (A\u2192B)   Y = weight value", icon='INFO')
+                box_curve.template_curve_mapping(brush, "curve")
+                box_curve.operator("mesh.wg_init_curve_from_anchors", icon='ANCHOR_CENTER')
 
                 # Presets
-                sub_box = box_cv.box()
+                sub_box = box_curve.box()
                 sub_box.label(text="Presets:")
                 row = sub_box.row(align=True)
                 for key in ('LINEAR', 'EASE_IN', 'EASE_OUT', 'S_CURVE'):
@@ -203,7 +168,7 @@ class VIEW3D_PT_weight_gradient(Panel):
                     op.preset = key
 
                 # Saved curves
-                sub_box = box_cv.box()
+                sub_box = box_curve.box()
                 row = sub_box.row(align=True)
                 row.label(text="Saved Curves", icon='CURVE_DATA')
                 sub_box.template_list(
@@ -218,6 +183,43 @@ class VIEW3D_PT_weight_gradient(Panel):
                 sub.enabled = len(props.saved_curves) > 0
                 op = sub.operator("mesh.wg_load_curve", text="Load", icon='CHECKMARK')
                 op.index = props.active_curve_index
+
+        else:
+            # Control points — only relevant for mathematical curve types
+            row = box_curve.row(align=True)
+            row.prop(props, "segments")
+            row.operator("mesh.wg_sync_points", text="", icon='FILE_REFRESH')
+            n_segs = props.segments
+            n_pts = len(props.control_points)
+            if n_pts >= 2:
+                row.prop(props, "mirror", text="", icon='MOD_MIRROR', toggle=True)
+
+            if n_pts != n_segs:
+                box_curve.label(text=f"Out of sync ({n_pts}/{n_segs}) — hit refresh", icon='ERROR')
+
+            if n_pts > 0:
+                n_total = n_pts + 1
+                mirroring = props.mirror and n_pts >= 2
+                for i, cp in enumerate(props.control_points):
+                    pct = int(round((i + 1) / n_total * 100))
+                    mirror_idx = n_pts - 1 - i
+                    is_middle = (mirror_idx == i)
+                    is_mirrored_slave = mirroring and i > mirror_idx
+
+                    r = box_curve.row(align=True)
+                    if mirroring and not is_middle and not is_mirrored_slave:
+                        pct2 = int(round((mirror_idx + 1) / n_total * 100))
+                        r.label(text="", icon='LINKED')
+                        r.prop(cp, "weight", slider=True, text=f"{pct}% + {pct2}%")
+                    elif is_mirrored_slave:
+                        r.enabled = False
+                        r.label(text="", icon='LINKED')
+                        r.prop(cp, "weight", slider=True, text=f"{pct}%")
+                    elif mirroring and is_middle:
+                        r.label(text="", icon='DECORATE')
+                        r.prop(cp, "weight", slider=True, text=f"{pct}% (mid)")
+                    else:
+                        r.prop(cp, "weight", slider=True, text=f"{pct}%")
 
         layout.separator()
 
