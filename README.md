@@ -4,7 +4,7 @@ A collection of Blender plugins for Arma Reforger modding, by **steffenbk**.
 
 Requires **Blender 4.2+**
 
-> **Important:** After installing or updating the addon, **restart Blender** before using the plugins. Some features register handlers and properties that require a fresh session to work correctly.
+ **Important:** After installing or updating the addon, **restart Blender** before using the plugins. Some features register handlers and properties that require a fresh session to work correctly.
 
 ## Links
 
