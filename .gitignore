@@ -1,4 +1,3 @@
-*.zip.tmp
-!plugins/bk_arma_tools.zip
 __pycache__/
 *.pyc
+plugins/*.zip
