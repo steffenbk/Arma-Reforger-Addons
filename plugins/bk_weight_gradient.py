@@ -85,10 +85,11 @@ def _on_cp_weight_update(self, context):
     n = len(pts)
     if n < 2:
         return
-    # Find our index
+    # Find our index via pointer comparison (== is unreliable for collection items)
+    self_ptr = self.as_pointer()
     my_idx = -1
     for i in range(n):
-        if pts[i] == self:
+        if pts[i].as_pointer() == self_ptr:
             my_idx = i
             break
     if my_idx < 0:
@@ -99,6 +100,12 @@ def _on_cp_weight_update(self, context):
     _mirror_updating = True
     pts[mirror_idx].weight = self.weight
     _mirror_updating = False
+
+
+class WG_SavedSelection(PropertyGroup):
+    name: bpy.props.StringProperty(name="Name", default="Selection")
+    indices_json: bpy.props.StringProperty(name="Indices", default="[]")
+    count: IntProperty(name="Count", default=0)
 
 
 class WG_ControlPoint(PropertyGroup):
@@ -185,6 +192,9 @@ class WeightGradientProperties(PropertyGroup):
         name="Power", default=2.0, min=0.1, max=10.0,
         description="Exponent for the custom power curve",
     )
+
+    saved_selections: CollectionProperty(type=WG_SavedSelection)
+    active_selection_index: IntProperty(name="Active Selection", default=0)
 
 
 # ---------------------------------------------------------------------------
@@ -428,7 +438,7 @@ class MESH_OT_wg_apply_gradient(Operator):
 
 
 class MESH_OT_wg_sync_points(Operator):
-    """Sync control points collection to match the segment count"""
+    """Sync control points collection to match the segment count and re-apply mirror"""
     bl_idname = "mesh.wg_sync_points"
     bl_label = "Sync Control Points"
     bl_options = {'REGISTER', 'UNDO'}
@@ -436,7 +446,130 @@ class MESH_OT_wg_sync_points(Operator):
     def execute(self, context):
         props = context.scene.weight_gradient
         _sync_control_points(props)
+        # Re-apply mirror pairing if active
+        if props.mirror and len(props.control_points) >= 2:
+            _on_mirror_toggle(props, context)
         self.report({'INFO'}, f"Synced to {props.segments} control points")
+        return {'FINISHED'}
+
+
+class MESH_OT_wg_save_selection(Operator):
+    """Save the current vertex selection to a named slot"""
+    bl_idname = "mesh.wg_save_selection"
+    bl_label = "Save Selection"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    name: bpy.props.StringProperty(name="Name", default="Selection")
+
+    @classmethod
+    def poll(cls, context):
+        return (context.active_object is not None
+                and context.active_object.type == 'MESH'
+                and context.mode == 'EDIT_MESH')
+
+    def invoke(self, context, event):
+        props = context.scene.weight_gradient
+        self.name = f"Selection {len(props.saved_selections) + 1}"
+        return context.window_manager.invoke_props_dialog(self)
+
+    def execute(self, context):
+        indices, _ = _get_selected_verts(context)
+        if not indices:
+            self.report({'WARNING'}, "No vertices selected")
+            return {'CANCELLED'}
+
+        props = context.scene.weight_gradient
+        slot = props.saved_selections.add()
+        slot.name = self.name
+        slot.indices_json = json.dumps(indices)
+        slot.count = len(indices)
+        props.active_selection_index = len(props.saved_selections) - 1
+        self.report({'INFO'}, f"Saved '{self.name}' ({len(indices)} verts)")
+        return {'FINISHED'}
+
+
+class MESH_OT_wg_load_selection(Operator):
+    """Load a saved vertex selection"""
+    bl_idname = "mesh.wg_load_selection"
+    bl_label = "Load Selection"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    index: IntProperty(name="Slot Index", default=0)
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        if not obj or obj.type != 'MESH':
+            return False
+        return context.mode in {'EDIT_MESH', 'OBJECT'}
+
+    def execute(self, context):
+        props = context.scene.weight_gradient
+        if self.index < 0 or self.index >= len(props.saved_selections):
+            self.report({'WARNING'}, "Invalid selection slot")
+            return {'CANCELLED'}
+
+        slot = props.saved_selections[self.index]
+        idx_set = _parse_indices(slot.indices_json)
+        if not idx_set:
+            self.report({'WARNING'}, "Selection is empty")
+            return {'CANCELLED'}
+
+        obj = context.active_object
+
+        # Enter edit mode if in object mode
+        was_object = (context.mode == 'OBJECT')
+        if was_object:
+            bpy.ops.object.mode_set(mode='EDIT')
+
+        # Switch to vertex select mode so the selection is visible
+        context.tool_settings.mesh_select_mode = (True, False, False)
+
+        bm = bmesh.from_edit_mesh(obj.data)
+        bm.verts.ensure_lookup_table()
+
+        # Deselect all first, then select saved verts
+        for v in bm.verts:
+            v.select = False
+        for e in bm.edges:
+            e.select = False
+        for f in bm.faces:
+            f.select = False
+
+        for v in bm.verts:
+            if v.index in idx_set:
+                v.select = True
+        bm.select_flush_mode()
+        bmesh.update_edit_mesh(obj.data)
+
+        # Force viewport redraw
+        for area in context.screen.areas:
+            if area.type == 'VIEW_3D':
+                area.tag_redraw()
+
+        props.active_selection_index = self.index
+        self.report({'INFO'}, f"Loaded '{slot.name}' ({slot.count} verts)")
+        return {'FINISHED'}
+
+
+class MESH_OT_wg_delete_selection(Operator):
+    """Delete a saved vertex selection"""
+    bl_idname = "mesh.wg_delete_selection"
+    bl_label = "Delete Selection"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    index: IntProperty(name="Slot Index", default=0)
+
+    def execute(self, context):
+        props = context.scene.weight_gradient
+        if self.index < 0 or self.index >= len(props.saved_selections):
+            return {'CANCELLED'}
+
+        name = props.saved_selections[self.index].name
+        props.saved_selections.remove(self.index)
+        if props.active_selection_index >= len(props.saved_selections):
+            props.active_selection_index = max(0, len(props.saved_selections) - 1)
+        self.report({'INFO'}, f"Deleted '{name}'")
         return {'FINISHED'}
 
 
@@ -461,6 +594,17 @@ class MESH_OT_wg_clear_anchors(Operator):
 # ---------------------------------------------------------------------------
 # Panel
 # ---------------------------------------------------------------------------
+
+class WG_UL_saved_selections(bpy.types.UIList):
+    bl_idname = "WG_UL_saved_selections"
+
+    def draw_item(self, context, layout, data, item, icon, active_data, active_property, index):
+        row = layout.row(align=True)
+        row.prop(item, "name", text="", emboss=False, icon='RESTRICT_SELECT_OFF')
+        row.label(text=f"({item.count})")
+        op_del = row.operator("mesh.wg_delete_selection", text="", icon='X')
+        op_del.index = index
+
 
 class VIEW3D_PT_weight_gradient(Panel):
     bl_label = "Weight Gradient"
@@ -561,18 +705,43 @@ class VIEW3D_PT_weight_gradient(Panel):
 
         layout.operator("mesh.wg_clear_anchors", icon='TRASH')
 
+        # -- Saved Selections -------------------------------------------
+        layout.separator()
+        box = layout.box()
+        row = box.row(align=True)
+        row.label(text="Saved Selections", icon='BOOKMARKS')
+
+        box.template_list(
+            "WG_UL_saved_selections", "",
+            props, "saved_selections",
+            props, "active_selection_index",
+            rows=3, maxrows=5,
+        )
+
+        row = box.row(align=True)
+        row.operator("mesh.wg_save_selection", text="Save", icon='ADD')
+        sub = row.row(align=True)
+        sub.enabled = len(props.saved_selections) > 0
+        op = sub.operator("mesh.wg_load_selection", text="Load", icon='CHECKMARK')
+        op.index = props.active_selection_index
+
 
 # ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
 
 classes = (
+    WG_SavedSelection,
     WG_ControlPoint,
     WeightGradientProperties,
+    WG_UL_saved_selections,
     MESH_OT_wg_set_anchor_a,
     MESH_OT_wg_set_anchor_b,
     MESH_OT_wg_apply_gradient,
     MESH_OT_wg_sync_points,
+    MESH_OT_wg_save_selection,
+    MESH_OT_wg_load_selection,
+    MESH_OT_wg_delete_selection,
     MESH_OT_wg_clear_anchors,
     VIEW3D_PT_weight_gradient,
 )
