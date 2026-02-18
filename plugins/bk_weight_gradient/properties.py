@@ -150,10 +150,10 @@ class WeightGradientProperties(PropertyGroup):
     )
 
     curve_power: FloatProperty(
-        name="Power", default=1.0, min=0.1, max=10.0,
+        name="Power", default=0.0, min=0.0, max=9.0,
         description=(
-            "Post-process exponent on the final weight. "
-            "1.0 = no effect, >1 = slow start / rush at end, <1 = fast start / plateau"
+            "Post-process power boost applied to the final weight. "
+            "0 = no effect, higher = slower start then rush at end"
         ),
     )
 

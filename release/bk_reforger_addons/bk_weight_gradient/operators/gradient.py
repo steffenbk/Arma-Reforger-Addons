@@ -129,9 +129,9 @@ class MESH_OT_wg_apply_gradient(Operator):
                             weight = w0 + (w1 - w0) * seg_t
                             break
 
-            # Power post-processing (1.0 = no effect)
-            if abs(power - 1.0) > 1e-6:
-                weight = max(0.0, min(1.0, weight)) ** power
+            # Power post-processing (0 = no effect)
+            if power > 1e-6:
+                weight = max(0.0, min(1.0, weight)) ** (1.0 + power)
 
             vg.add([v.index], weight, 'REPLACE')
             count += 1

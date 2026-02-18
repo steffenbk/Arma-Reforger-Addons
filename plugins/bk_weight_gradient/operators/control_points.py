@@ -7,19 +7,25 @@ from bpy.props import StringProperty
 from ..utils import _sync_control_points
 
 
-def _cp_weight(t, preset):
-    """Return the weight value for a control point at position t given a preset name."""
+def _lerp(a, b, x):
+    return a + (b - a) * x
+
+
+def _cp_weight(t, preset, w_a, w_b):
+    """Return the weight for a control point at position t, interpolating between anchor weights."""
     if preset == 'LINEAR':
-        return t
+        f = t
     elif preset == 'EASE_IN':
-        return t * t
+        f = t * t
     elif preset == 'EASE_OUT':
-        return 1.0 - (1.0 - t) ** 2
+        f = 1.0 - (1.0 - t) ** 2
     elif preset == 'EASE_IN_OUT':
-        return 3.0 * t * t - 2.0 * t * t * t
+        f = 3.0 * t * t - 2.0 * t * t * t
     elif preset == 'SHARP':
-        return t ** 0.5
-    return t
+        f = t ** 0.5
+    else:
+        f = t
+    return _lerp(w_a, w_b, f)
 
 
 class MESH_OT_wg_sync_points(Operator):
@@ -50,10 +56,13 @@ class MESH_OT_wg_cp_preset(Operator):
         if n == 0:
             self.report({'WARNING'}, "No control points — increase Segments first")
             return {'CANCELLED'}
+        anchors = props.anchors
+        w_a = anchors[0].weight if len(anchors) > 0 else 1.0
+        w_b = anchors[-1].weight if len(anchors) > 1 else 0.0
         n_total = n + 1
         for i, cp in enumerate(pts):
             t = (i + 1) / n_total
-            cp.weight = round(_cp_weight(t, self.preset), 4)
+            cp.weight = round(_cp_weight(t, self.preset, w_a, w_b), 4)
         self.report({'INFO'}, f"Applied {self.preset.replace('_', ' ').title()} preset to {n} control points")
         return {'FINISHED'}
 
