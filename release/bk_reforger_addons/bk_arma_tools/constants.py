@@ -8,7 +8,12 @@ def get_mode(context):
     return getattr(context.scene, "arvehicles_mode", "VEHICLE")
 
 def get_bone_prefix(context):
-    return "w_" if get_mode(context) == "WEAPON" else "v_"
+    mode = get_mode(context)
+    if mode == "WEAPON":
+        return "w_"
+    if mode == "CUSTOM":
+        return getattr(context.scene, "arvehicles_custom_prefix", "c_")
+    return "v_"
 
 def get_component_types(context):
     return WEAPON_COMPONENT_TYPES if get_mode(context) == "WEAPON" else VEHICLE_COMPONENT_TYPES
@@ -21,8 +26,12 @@ def get_socket_types(context):
 
 def get_root_bones(context):
     """Returns (root_name, body_name) for armature creation."""
-    if get_mode(context) == "WEAPON":
-        return ("w_root", None)  # Weapons only have w_root
+    mode = get_mode(context)
+    if mode == "WEAPON":
+        return ("w_root", None)
+    if mode == "CUSTOM":
+        prefix = get_bone_prefix(context)
+        return (prefix + "root", None)
     return ("v_root", "v_body")
 
 

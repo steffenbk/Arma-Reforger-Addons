@@ -3,6 +3,7 @@
 import json
 
 import bpy
+import bmesh
 from bpy.types import Operator
 from bpy.props import IntProperty
 
@@ -63,6 +64,8 @@ class MESH_OT_wg_apply_gradient(Operator):
                 and context.mode == 'EDIT_MESH'):
             return False
         props = context.scene.weight_gradient
+        if props.gradient_source == 'AXIS':
+            return True
         anchors = props.anchors
         n = len(anchors)
         return n >= 2 and anchors[0].is_set and anchors[n - 1].is_set
@@ -80,17 +83,6 @@ class MESH_OT_wg_apply_gradient(Operator):
             self.report({'WARNING'}, "No active vertex group")
             return {'CANCELLED'}
 
-        stops, a_co, ab, ab_len_sq = _build_stops(props)
-        if stops is None:
-            self.report({'WARNING'}, "First and last anchors must be set and not coincide")
-            return {'CANCELLED'}
-
-        anchor_indices = {}
-        for a in props.anchors:
-            if a.is_set:
-                for idx in _parse_indices(a.indices_json):
-                    anchor_indices[idx] = a.weight
-
         curve_mode = props.curve_mode
         power = props.curve_power
 
@@ -100,23 +92,49 @@ class MESH_OT_wg_apply_gradient(Operator):
             mapping.initialize()
             crv = mapping.curves[0]
 
-        bpy.ops.object.mode_set(mode='OBJECT')
+        # --- build per-vertex t values ---
+        if props.gradient_source == 'AXIS':
+            _ensure_anchors(props)
+            w_start = props.anchors[0].weight if props.anchors else 1.0
+            w_end   = props.anchors[-1].weight if len(props.anchors) > 1 else 0.0
 
-        count = 0
-        for v in me.vertices:
-            if not v.select:
-                continue
+            axis = props.gradient_axis
+            axis_idx = {'X': 0, 'Y': 1, 'Z': 2, 'NEG_X': 0, 'NEG_Y': 1, 'NEG_Z': 2}[axis]
+            sign = -1 if axis.startswith('NEG') else 1
 
-            v_world = obj.matrix_world @ v.co
-            t = (v_world - a_co).dot(ab) / ab_len_sq
-            t = max(0.0, min(1.0, t))
+            bm = bmesh.from_edit_mesh(me)
+            bm.verts.ensure_lookup_table()
+            sel_verts = [v for v in bm.verts if v.select]
+            if not sel_verts:
+                self.report({'WARNING'}, "No vertices selected")
+                return {'CANCELLED'}
 
-            if curve_mode == 'CURVE_GRAPH':
-                weight = mapping.evaluate(crv, t)
-                weight = max(0.0, min(1.0, weight))
-            else:  # CONTROL_POINTS — linear lerp between stops
-                if v.index in anchor_indices:
-                    weight = anchor_indices[v.index]
+            coords = [(obj.matrix_world @ v.co)[axis_idx] * sign for v in sel_verts]
+            min_c, max_c = min(coords), max(coords)
+            span = max_c - min_c
+
+            # Build stops from start/end weights + control points
+            stops = [(0.0, w_start)]
+            n_cp = len(props.control_points)
+            if n_cp > 0:
+                n_total = n_cp + 1
+                for i, cp in enumerate(props.control_points):
+                    stops.append(((i + 1) / n_total, cp.weight))
+            stops.append((1.0, w_end))
+
+            vert_t = {}
+            for v, c in zip(sel_verts, coords):
+                vert_t[v.index] = (c - min_c) / span if span > 1e-10 else 0.0
+
+            bpy.ops.object.mode_set(mode='OBJECT')
+            count = 0
+            for v in me.vertices:
+                if v.index not in vert_t:
+                    continue
+                t = vert_t[v.index]
+                if curve_mode == 'CURVE_GRAPH':
+                    weight = mapping.evaluate(crv, t)
+                    weight = max(0.0, min(1.0, weight))
                 else:
                     weight = stops[-1][1]
                     for i in range(len(stops) - 1):
@@ -128,13 +146,53 @@ class MESH_OT_wg_apply_gradient(Operator):
                             seg_t = max(0.0, min(1.0, seg_t))
                             weight = w0 + (w1 - w0) * seg_t
                             break
+                if power > 1e-6:
+                    weight = max(0.0, min(1.0, weight)) ** (1.0 + power)
+                vg.add([v.index], weight, 'REPLACE')
+                count += 1
 
-            # Power post-processing (0 = no effect)
-            if power > 1e-6:
-                weight = max(0.0, min(1.0, weight)) ** (1.0 + power)
+        else:  # ANCHORS
+            stops, a_co, ab, ab_len_sq = _build_stops(props)
+            if stops is None:
+                self.report({'WARNING'}, "First and last anchors must be set and not coincide")
+                return {'CANCELLED'}
 
-            vg.add([v.index], weight, 'REPLACE')
-            count += 1
+            anchor_indices = {}
+            for a in props.anchors:
+                if a.is_set:
+                    for idx in _parse_indices(a.indices_json):
+                        anchor_indices[idx] = a.weight
+
+            bpy.ops.object.mode_set(mode='OBJECT')
+            count = 0
+            for v in me.vertices:
+                if not v.select:
+                    continue
+                v_world = obj.matrix_world @ v.co
+                t = (v_world - a_co).dot(ab) / ab_len_sq
+                t = max(0.0, min(1.0, t))
+
+                if curve_mode == 'CURVE_GRAPH':
+                    weight = mapping.evaluate(crv, t)
+                    weight = max(0.0, min(1.0, weight))
+                else:
+                    if v.index in anchor_indices:
+                        weight = anchor_indices[v.index]
+                    else:
+                        weight = stops[-1][1]
+                        for i in range(len(stops) - 1):
+                            t0, w0 = stops[i]
+                            t1, w1 = stops[i + 1]
+                            if t <= t1 or i == len(stops) - 2:
+                                seg_len = t1 - t0
+                                seg_t = (t - t0) / seg_len if seg_len > 1e-10 else 0.0
+                                seg_t = max(0.0, min(1.0, seg_t))
+                                weight = w0 + (w1 - w0) * seg_t
+                                break
+                if power > 1e-6:
+                    weight = max(0.0, min(1.0, weight)) ** (1.0 + power)
+                vg.add([v.index], weight, 'REPLACE')
+                count += 1
 
         bpy.ops.object.mode_set(mode='EDIT')
         self.report({'INFO'}, f"Gradient applied to {count} vertices")

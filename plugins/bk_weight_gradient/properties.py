@@ -138,6 +138,28 @@ class WeightGradientProperties(PropertyGroup):
         update=_on_anchor_count_update,
     )
 
+    gradient_source: EnumProperty(
+        name="Gradient Source",
+        items=[
+            ('ANCHORS', "Anchors", "Define gradient direction by placing anchor vertices"),
+            ('AXIS',    "Axis",    "Define gradient direction along a world axis"),
+        ],
+        default='ANCHORS',
+    )
+
+    gradient_axis: EnumProperty(
+        name="Axis",
+        items=[
+            ('X',     "+X", "Gradient along positive X"),
+            ('Y',     "+Y", "Gradient along positive Y"),
+            ('Z',     "+Z", "Gradient along positive Z"),
+            ('NEG_X', "-X", "Gradient along negative X"),
+            ('NEG_Y', "-Y", "Gradient along negative Y"),
+            ('NEG_Z', "-Z", "Gradient along negative Z"),
+        ],
+        default='Z',
+    )
+
     curve_mode: EnumProperty(
         name="Mode",
         items=[

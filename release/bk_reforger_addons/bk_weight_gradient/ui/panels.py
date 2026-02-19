@@ -4,6 +4,7 @@ import bpy
 from bpy.types import Panel
 
 from ..curve_utils import _get_curve_mapping
+from ..utils import _ensure_anchors
 
 
 class WG_UL_saved_curves(bpy.types.UIList):
@@ -108,23 +109,38 @@ class VIEW3D_PT_weight_gradient(Panel):
         props = context.scene.weight_gradient
         obj = context.active_object
 
-        # -- Anchor Count -----------------------------------------------
-        layout.prop(props, "anchor_count")
+        # -- Gradient Source toggle -------------------------------------
+        row = layout.row(align=True)
+        row.prop(props, "gradient_source", expand=True)
 
-        # -- Anchors ----------------------------------------------------
-        for i, a in enumerate(props.anchors):
-            box = layout.box()
-            row = box.row(align=True)
-            label = i + 1
-            op = row.operator("mesh.wg_set_anchor", text=f"Set Anchor {label}",
-                              icon='VERTEXSEL')
-            op.index = i
-            if a.is_set:
-                n = a.vert_count
-                row.label(text=f"{n} vert{'s' if n > 1 else ''}", icon='CHECKMARK')
-            else:
-                row.label(text="Not set", icon='X')
-            box.prop(a, "weight", slider=True)
+        # -- Anchors / Axis setup ---------------------------------------
+        if props.gradient_source == 'AXIS':
+            box_axis = layout.box()
+            row = box_axis.row(align=True)
+            row.label(text="Axis:")
+            row.prop(props, "gradient_axis", expand=True)
+            _ensure_anchors(props)
+            if props.anchors:
+                row2 = box_axis.row(align=True)
+                row2.prop(props.anchors[0], "weight", slider=True, text="Start Weight")
+                row2.prop(props.anchors[-1], "weight", slider=True, text="End Weight")
+        else:
+            # -- Anchor Count -------------------------------------------
+            layout.prop(props, "anchor_count")
+            # -- Anchor boxes -------------------------------------------
+            for i, a in enumerate(props.anchors):
+                box = layout.box()
+                row = box.row(align=True)
+                label = i + 1
+                op = row.operator("mesh.wg_set_anchor", text=f"Set Anchor {label}",
+                                  icon='VERTEXSEL')
+                op.index = i
+                if a.is_set:
+                    n = a.vert_count
+                    row.label(text=f"{n} vert{'s' if n > 1 else ''}", icon='CHECKMARK')
+                else:
+                    row.label(text="Not set", icon='X')
+                box.prop(a, "weight", slider=True)
 
         layout.separator()
 

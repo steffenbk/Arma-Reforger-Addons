@@ -21,6 +21,9 @@ class ARVEHICLES_PT_panel(bpy.types.Panel):
         row = box.row(align=True)
         row.prop_enum(scene, "arvehicles_mode", 'VEHICLE')
         row.prop_enum(scene, "arvehicles_mode", 'WEAPON')
+        row.prop_enum(scene, "arvehicles_mode", 'CUSTOM')
+        if mode == 'CUSTOM':
+            box.prop(scene, "arvehicles_custom_prefix", text="Prefix")
 
         # ============================================================
         # MESH TOOLS

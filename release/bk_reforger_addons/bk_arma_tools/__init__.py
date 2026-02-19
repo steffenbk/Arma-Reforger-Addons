@@ -70,12 +70,18 @@ def register():
     # Register scene property for mode switching
     bpy.types.Scene.arvehicles_mode = bpy.props.EnumProperty(
         name="Asset Mode",
-        description="Switch between vehicle and weapon rigging tools",
+        description="Switch between vehicle, weapon, or custom rigging tools",
         items=[
             ('VEHICLE', "Vehicle", "Vehicle rigging mode - bones prefixed with v_"),
             ('WEAPON',  "Weapon",  "Weapon rigging mode - bones prefixed with w_"),
+            ('CUSTOM',  "Custom",  "Custom prefix defined by you"),
         ],
         default='VEHICLE',
+    )
+    bpy.types.Scene.arvehicles_custom_prefix = bpy.props.StringProperty(
+        name="Custom Prefix",
+        description="Prefix applied to all bones in Custom mode (e.g. 'c_' or 'player_')",
+        default="c_",
     )
     for cls in classes:
         bpy.utils.register_class(cls)
@@ -84,3 +90,4 @@ def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
     del bpy.types.Scene.arvehicles_mode
+    del bpy.types.Scene.arvehicles_custom_prefix
