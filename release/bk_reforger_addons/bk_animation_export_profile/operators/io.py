@@ -42,7 +42,8 @@ class ARPROFILE_OT_export_profile(Operator):
             with open(self.filepath, 'w') as f:
                 f.write("$animExportProfile {\n")
                 f.write(f" #trackCount {len(settings.tracks)}\n")
-                f.write(f' #movement "{settings.movement_bone}"\n')
+                if settings.movement_bone:
+                    f.write(f' #movement "{settings.movement_bone}"\n')
                 f.write(f' #defaultFn "{settings.default_fn}"\n')
                 f.write(f' #defaultLocalFn "{settings.default_local_fn}"\n')
                 f.write(" $tracks {\n")

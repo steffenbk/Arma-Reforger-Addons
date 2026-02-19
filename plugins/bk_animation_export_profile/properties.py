@@ -54,8 +54,8 @@ class ARPROFILE_PG_settings(PropertyGroup):
 
     default_fn: StringProperty(
         name="Default Function",
-        description="Default GlobalSpace export modifier (MUST be empty for Blender! Use defaultFnMB only for MotionBuilder)",
-        default="defaultFnMB"
+        description="Default GlobalSpace export modifier (must be empty for Blender; defaultFnMB is MotionBuilder only)",
+        default=""
     )
 
     default_local_fn: StringProperty(

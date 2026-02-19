@@ -1,7 +1,7 @@
 bl_info = {
     "name": "BK Animation Export Profile",
     "author": "steffenbk",
-    "version": (1, 1, 0),
+    "version": (1, 2, 0),
     "blender": (4, 2, 0),
     "location": "3D Viewport > Sidebar > BK Anim Export",
     "description": "Create and manage animation export profiles (.apr) for Arma Reforger",
