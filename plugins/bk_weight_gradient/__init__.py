@@ -11,7 +11,7 @@ selected vertices for fast, precise weight painting.
 bl_info = {
     "name": "BK Weight Gradient",
     "author": "steffenbk",
-    "version": (2, 0, 1),
+    "version": (2, 0, 2),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > BK Tools",
     "description": "Apply weight gradients between anchor vertices with selectable curves",
