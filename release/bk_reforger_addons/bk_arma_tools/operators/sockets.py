@@ -97,16 +97,17 @@ class ARVEHICLES_OT_create_socket(bpy.types.Operator):
                 break
 
         if armature:
-            mat = socket.matrix_world.copy()
             if self.parent_bone != 'NONE' and self.parent_bone in armature.data.bones:
                 socket.parent = armature
                 socket.parent_type = 'BONE'
                 socket.parent_bone = self.parent_bone
-                socket.matrix_world = mat
+                pb = armature.pose.bones.get(self.parent_bone)
+                socket.matrix_parent_inverse = (armature.matrix_world @ pb.matrix).inverted() if pb else armature.matrix_world.inverted()
                 self.report({'INFO'}, f"Socket parented to bone '{self.parent_bone}'")
             else:
                 socket.parent = armature
-                socket.matrix_world = mat
+                socket.parent_type = 'OBJECT'
+                socket.matrix_parent_inverse = armature.matrix_world.inverted()
                 self.report({'INFO'}, f"Socket parented to armature '{armature.name}'")
         else:
             self.report({'WARNING'}, "No armature found to parent socket to")
@@ -163,12 +164,13 @@ class ARVEHICLES_OT_parent_socket_to_bone(bpy.types.Operator):
             self.report({'ERROR'}, "No empties selected")
             return {'CANCELLED'}
 
+        pb = armature.pose.bones.get(self.target_bone)
+        parent_inv = (armature.matrix_world @ pb.matrix).inverted() if pb else armature.matrix_world.inverted()
         for empty in selected_empties:
-            mat = empty.matrix_world.copy()
             empty.parent = armature
             empty.parent_type = 'BONE'
             empty.parent_bone = self.target_bone
-            empty.matrix_world = mat
+            empty.matrix_parent_inverse = parent_inv
 
         self.report({'INFO'}, f"Parented {len(selected_empties)} empty/empties to bone '{self.target_bone}'")
         return {'FINISHED'}

@@ -371,22 +371,23 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
             socket["vehicle_part"] = "attachment_point"
 
             if armature and self.socket_parent_mode != 'NONE':
-                mat = socket.matrix_world.copy()
                 if self.socket_parent_mode == 'ARMATURE':
                     socket.parent = armature
                     socket.parent_type = 'OBJECT'
-                    socket.matrix_world = mat
+                    socket.matrix_parent_inverse = armature.matrix_world.inverted()
                 elif self.socket_parent_mode == 'BONE' and self.socket_target_bone != 'NONE':
                     if self.socket_target_bone in armature.data.bones:
                         socket.parent = armature
                         socket.parent_type = 'BONE'
                         socket.parent_bone = self.socket_target_bone
-                        socket.matrix_world = mat
+                        pb = armature.pose.bones.get(self.socket_target_bone)
+                        socket.matrix_parent_inverse = (armature.matrix_world @ pb.matrix).inverted() if pb else armature.matrix_world.inverted()
                 elif self.socket_parent_mode == 'NEW_BONE' and bone_name and bone_name in armature.data.bones:
                     socket.parent = armature
                     socket.parent_type = 'BONE'
                     socket.parent_bone = bone_name
-                    socket.matrix_world = mat
+                    pb = armature.pose.bones.get(bone_name)
+                    socket.matrix_parent_inverse = (armature.matrix_world @ pb.matrix).inverted() if pb else armature.matrix_world.inverted()
 
         if self.add_socket and self.set_origin_to_socket and socket:
             bpy.ops.object.select_all(action='DESELECT')
@@ -1029,22 +1030,23 @@ class ARVEHICLES_OT_add_to_object(bpy.types.Operator):
                 sock["attached_part"] = obj.name
                 sock["vehicle_part"]  = "attachment_point"
                 if armature and self.socket_parent_mode != 'NONE':
-                    mat = sock.matrix_world.copy()
                     if self.socket_parent_mode == 'ARMATURE':
                         sock.parent = armature
                         sock.parent_type = 'OBJECT'
-                        sock.matrix_world = mat
+                        sock.matrix_parent_inverse = armature.matrix_world.inverted()
                     elif self.socket_parent_mode == 'BONE' and self.socket_target_bone != 'NONE':
                         if self.socket_target_bone in armature.data.bones:
                             sock.parent = armature
                             sock.parent_type = 'BONE'
                             sock.parent_bone = self.socket_target_bone
-                            sock.matrix_world = mat
+                            pb = armature.pose.bones.get(self.socket_target_bone)
+                            sock.matrix_parent_inverse = (armature.matrix_world @ pb.matrix).inverted() if pb else armature.matrix_world.inverted()
                     elif self.socket_parent_mode == 'NEW_BONE' and bone_name and bone_name in armature.data.bones:
                         sock.parent = armature
                         sock.parent_type = 'BONE'
                         sock.parent_bone = bone_name
-                        sock.matrix_world = mat
+                        pb = armature.pose.bones.get(bone_name)
+                        sock.matrix_parent_inverse = (armature.matrix_world @ pb.matrix).inverted() if pb else armature.matrix_world.inverted()
                 if self.set_origin_to_socket:
                     bpy.ops.object.select_all(action='DESELECT')
                     obj.select_set(True)
