@@ -146,7 +146,7 @@ class VIEW3D_PT_weight_gradient(Panel):
 
         # -- Vertex group -----------------------------------------------
         if obj.vertex_groups:
-            layout.prop_search(obj.vertex_groups, "active", obj, "vertex_groups", text="Group")
+            layout.prop_search(props, "target_vg_name", obj, "vertex_groups", text="Group")
         else:
             layout.label(text="No vertex groups", icon='ERROR')
 

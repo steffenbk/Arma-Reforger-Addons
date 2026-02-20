@@ -78,9 +78,10 @@ class MESH_OT_wg_apply_gradient(Operator):
         if not obj.vertex_groups:
             self.report({'WARNING'}, "No vertex groups on this object")
             return {'CANCELLED'}
-        vg = obj.vertex_groups.active
+        vg_name = props.target_vg_name
+        vg = obj.vertex_groups.get(vg_name) if vg_name else obj.vertex_groups.active
         if vg is None:
-            self.report({'WARNING'}, "No active vertex group")
+            self.report({'WARNING'}, "No vertex group selected — pick one in the 'Group' field")
             return {'CANCELLED'}
 
         curve_mode = props.curve_mode

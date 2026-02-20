@@ -202,6 +202,8 @@ class WeightGradientProperties(PropertyGroup):
     saved_selections: CollectionProperty(type=WG_SavedSelection)
     active_selection_index: IntProperty(name="Active Selection", default=0)
 
+    target_vg_name: StringProperty(name="Group", default="")
+
     segments: IntProperty(
         name="Control Points",
         default=0, min=0, max=20,
