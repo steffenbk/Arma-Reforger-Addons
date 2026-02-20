@@ -9,7 +9,7 @@ Requires **Blender 4.2+**
 ## Links 
 
 - YouTube: https://www.youtube.com/@steffenbk1
-- If you'd like to support this work, no obligation — I'm just doing this for fun: [Buymeacoffee](buymeacoffee.com/steffenbk) or
+- If you'd like to support this work, no obligation — I'm just doing this for fun: [Buymeacoffee](https://buymeacoffee.com/steffenbk) or
   [PayPal Donation](https://www.paypal.com/donate/?business=48EMTMZWYCXVN&no_recurring=0&item_name=Thanks+for+all+support%21+%3AD&currency_code=NOK)
 ## All-in-One Install
 
