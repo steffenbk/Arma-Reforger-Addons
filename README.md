@@ -6,10 +6,10 @@ Requires **Blender 4.2+**
 
  **Important:** After installing or updating the addon, **restart Blender** before using the plugins. Some features register handlers and properties that require a fresh session to work correctly.
 
-## Links
+## Links 
 
 - YouTube: https://www.youtube.com/@steffenbk1
-- If you'd like to support this work, no obligation — I'm just doing this for fun:
+- If you'd like to support this work, no obligation — I'm just doing this for fun:[Buymeacoffee](buymeacoffee.com/steffenbk) or
   [PayPal Donation](https://www.paypal.com/donate/?business=48EMTMZWYCXVN&no_recurring=0&item_name=Thanks+for+all+support%21+%3AD&currency_code=NOK)
 ## All-in-One Install
 
