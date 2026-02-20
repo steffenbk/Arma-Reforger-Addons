@@ -13,7 +13,7 @@ from .collisions import (
     ARVEHICLES_OT_create_center_of_mass,
 )
 
-from .sockets import ARVEHICLES_OT_create_socket
+from .sockets import ARVEHICLES_OT_create_socket, ARVEHICLES_OT_parent_socket_to_bone
 
 from .components import (
     ARVEHICLES_OT_add_to_object,

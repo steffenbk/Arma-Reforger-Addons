@@ -75,6 +75,7 @@ class ARVEHICLES_PT_panel(bpy.types.Panel):
         col.label(text="Create Sockets:")
         op = col.operator("arvehicles.create_socket", text="Add Socket")
         op.socket_type = 'custom'
+        col.operator("arvehicles.parent_socket_to_bone", text="Parent Empty to Bone", icon='CONSTRAINT_BONE')
 
         # ============================================================
         # RIGGING
