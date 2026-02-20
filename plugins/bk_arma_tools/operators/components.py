@@ -11,6 +11,18 @@ def _component_type_items(self, context):
     return get_component_types(context)
 
 
+def _get_available_bones(self, context):
+    """Module-level bone picker — usable before class methods are defined."""
+    default_label = "w_root (Default)" if get_mode(context) == 'WEAPON' else "v_body (Default)"
+    items = [('NONE', default_label, "")]
+    for obj in bpy.data.objects:
+        if obj.type == 'ARMATURE':
+            for bone in obj.data.bones:
+                items.append((bone.name, bone.name, ""))
+            break
+    return items
+
+
 # ============================================================================
 # MODE-AWARE LOOKUP HELPERS
 # ============================================================================
@@ -97,7 +109,7 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         default='ARMATURE',
     )
     socket_target_bone: bpy.props.EnumProperty(
-        name="Socket Parent Bone", items=get_available_bones
+        name="Socket Parent Bone", items=_get_available_bones
     )
 
     # Bone
@@ -806,7 +818,7 @@ class ARVEHICLES_OT_add_to_object(bpy.types.Operator):
         default='ARMATURE',
     )
     socket_target_bone: bpy.props.EnumProperty(
-        name="Socket Parent Bone", items=get_available_bones
+        name="Socket Parent Bone", items=_get_available_bones
     )
 
     add_bone: bpy.props.BoolProperty(name="Add Bone", default=False)
