@@ -86,7 +86,19 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
     add_socket: bpy.props.BoolProperty(name="Add Socket", default=True)
     custom_socket_name: bpy.props.StringProperty(name="Custom Socket Name", default="")
     set_origin_to_socket: bpy.props.BoolProperty(name="Set Origin to Socket", default=True)
-    parent_socket_to_armature: bpy.props.BoolProperty(name="Parent Socket to Armature", default=True)
+    socket_parent_mode: bpy.props.EnumProperty(
+        name="Parent Socket",
+        items=[
+            ('ARMATURE', "Parent to Armature", "Parent socket to the armature object"),
+            ('BONE',     "Parent to Bone",     "Parent socket to a specific existing bone"),
+            ('NEW_BONE', "Parent to New Bone", "Parent socket to the bone being created (requires Add Bone)"),
+            ('NONE',     "Don't Parent",       "Leave socket unparented"),
+        ],
+        default='ARMATURE',
+    )
+    socket_target_bone: bpy.props.EnumProperty(
+        name="Socket Parent Bone", items=get_available_bones
+    )
 
     # Bone
     add_bone: bpy.props.BoolProperty(name="Add Bone", default=False)
@@ -346,9 +358,23 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
             socket["attached_part"] = new_obj.name
             socket["vehicle_part"] = "attachment_point"
 
-            if armature and self.parent_socket_to_armature:
-                socket.parent = armature
-                socket.parent_type = 'OBJECT'
+            if armature and self.socket_parent_mode != 'NONE':
+                mat = socket.matrix_world.copy()
+                if self.socket_parent_mode == 'ARMATURE':
+                    socket.parent = armature
+                    socket.parent_type = 'OBJECT'
+                    socket.matrix_world = mat
+                elif self.socket_parent_mode == 'BONE' and self.socket_target_bone != 'NONE':
+                    if self.socket_target_bone in armature.data.bones:
+                        socket.parent = armature
+                        socket.parent_type = 'BONE'
+                        socket.parent_bone = self.socket_target_bone
+                        socket.matrix_world = mat
+                elif self.socket_parent_mode == 'NEW_BONE' and bone_name and bone_name in armature.data.bones:
+                    socket.parent = armature
+                    socket.parent_type = 'BONE'
+                    socket.parent_bone = bone_name
+                    socket.matrix_world = mat
 
         if self.add_socket and self.set_origin_to_socket and socket:
             bpy.ops.object.select_all(action='DESELECT')
@@ -387,7 +413,11 @@ class ARVEHICLES_OT_separate_components(bpy.types.Operator):
         if self.add_socket:
             box.prop(self, "custom_socket_name")
             box.prop(self, "set_origin_to_socket")
-            box.prop(self, "parent_socket_to_armature")
+            box.prop(self, "socket_parent_mode", text="Parent")
+            if self.socket_parent_mode == 'BONE':
+                box.prop(self, "socket_target_bone", text="", icon='BONE_DATA')
+            elif self.socket_parent_mode == 'NEW_BONE' and not self.add_bone:
+                box.label(text="Enable 'Add Bone' to use this option", icon='ERROR')
 
         layout.separator()
         box = layout.box()
@@ -765,7 +795,19 @@ class ARVEHICLES_OT_add_to_object(bpy.types.Operator):
     add_socket: bpy.props.BoolProperty(name="Add Socket", default=True)
     custom_socket_name: bpy.props.StringProperty(name="Custom Socket Name", default="")
     set_origin_to_socket: bpy.props.BoolProperty(name="Set Origin to Socket", default=True)
-    parent_socket_to_armature: bpy.props.BoolProperty(name="Parent Socket to Armature", default=True)
+    socket_parent_mode: bpy.props.EnumProperty(
+        name="Parent Socket",
+        items=[
+            ('ARMATURE', "Parent to Armature", "Parent socket to the armature object"),
+            ('BONE',     "Parent to Bone",     "Parent socket to a specific existing bone"),
+            ('NEW_BONE', "Parent to New Bone", "Parent socket to the bone being created (requires Add Bone)"),
+            ('NONE',     "Don't Parent",       "Leave socket unparented"),
+        ],
+        default='ARMATURE',
+    )
+    socket_target_bone: bpy.props.EnumProperty(
+        name="Socket Parent Bone", items=get_available_bones
+    )
 
     add_bone: bpy.props.BoolProperty(name="Add Bone", default=False)
     custom_bone_name: bpy.props.StringProperty(name="Custom Bone Name", default="")
@@ -974,9 +1016,23 @@ class ARVEHICLES_OT_add_to_object(bpy.types.Operator):
                 sock["socket_type"]   = socket_type
                 sock["attached_part"] = obj.name
                 sock["vehicle_part"]  = "attachment_point"
-                if armature and self.parent_socket_to_armature:
-                    sock.parent = armature
-                    sock.parent_type = 'OBJECT'
+                if armature and self.socket_parent_mode != 'NONE':
+                    mat = sock.matrix_world.copy()
+                    if self.socket_parent_mode == 'ARMATURE':
+                        sock.parent = armature
+                        sock.parent_type = 'OBJECT'
+                        sock.matrix_world = mat
+                    elif self.socket_parent_mode == 'BONE' and self.socket_target_bone != 'NONE':
+                        if self.socket_target_bone in armature.data.bones:
+                            sock.parent = armature
+                            sock.parent_type = 'BONE'
+                            sock.parent_bone = self.socket_target_bone
+                            sock.matrix_world = mat
+                    elif self.socket_parent_mode == 'NEW_BONE' and bone_name and bone_name in armature.data.bones:
+                        sock.parent = armature
+                        sock.parent_type = 'BONE'
+                        sock.parent_bone = bone_name
+                        sock.matrix_world = mat
                 if self.set_origin_to_socket:
                     bpy.ops.object.select_all(action='DESELECT')
                     obj.select_set(True)
@@ -1030,7 +1086,11 @@ class ARVEHICLES_OT_add_to_object(bpy.types.Operator):
         if self.add_socket:
             box.prop(self, "custom_socket_name")
             box.prop(self, "set_origin_to_socket")
-            box.prop(self, "parent_socket_to_armature")
+            box.prop(self, "socket_parent_mode", text="Parent")
+            if self.socket_parent_mode == 'BONE':
+                box.prop(self, "socket_target_bone", text="", icon='BONE_DATA')
+            elif self.socket_parent_mode == 'NEW_BONE' and not self.add_bone:
+                box.label(text="Enable 'Add Bone' to use this option", icon='ERROR')
 
         layout.separator()
         box = layout.box()
