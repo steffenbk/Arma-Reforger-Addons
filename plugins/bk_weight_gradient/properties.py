@@ -9,25 +9,25 @@ from bpy.props import (
 )
 
 
+def _vg_items(self, context):
+    obj = context.active_object if context else None
+    if not (obj and obj.type == 'MESH' and obj.vertex_groups):
+        return [('NONE', "(No vertex groups)", "")]
+    return [(vg.name, vg.name, "") for vg in obj.vertex_groups]
+
+
 _mirror_updating = False  # guard against recursive mirror updates
 
 
 def _on_target_vg_update(self, context):
-    """Sync obj.vertex_groups.active when the Group field changes; prevent clearing."""
+    """Sync obj.vertex_groups.active when the Group enum changes."""
     obj = context.active_object
     if not (obj and obj.type == 'MESH' and obj.vertex_groups):
         return
-    if self.target_vg_name:
+    if self.target_vg_name and self.target_vg_name != 'NONE':
         vg = obj.vertex_groups.get(self.target_vg_name)
         if vg is not None:
             obj.vertex_groups.active = vg
-    else:
-        # Field was cleared — reset to whichever group is currently active
-        active = obj.vertex_groups.active
-        if active:
-            self.target_vg_name = active.name
-        elif obj.vertex_groups:
-            self.target_vg_name = obj.vertex_groups[0].name
 
 
 def _on_cp_weight_update(self, context):
@@ -220,7 +220,12 @@ class WeightGradientProperties(PropertyGroup):
     saved_selections: CollectionProperty(type=WG_SavedSelection)
     active_selection_index: IntProperty(name="Active Selection", default=0)
 
-    target_vg_name: StringProperty(name="Group", default="", update=_on_target_vg_update)
+    target_vg_name: EnumProperty(
+        name="Group",
+        description="Vertex group to paint the gradient into",
+        items=_vg_items,
+        update=_on_target_vg_update,
+    )
 
     segments: IntProperty(
         name="Control Points",
