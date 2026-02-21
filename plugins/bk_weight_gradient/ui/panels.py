@@ -177,10 +177,6 @@ class VIEW3D_PT_weight_gradient(Panel):
 
         # -- Vertex group ---------------------------------------------------
         if obj.vertex_groups:
-            # Sync active vertex group from Data Properties into plugin selector
-            active_vg = obj.vertex_groups.active
-            if active_vg and props.target_vg_name != active_vg.name:
-                props.target_vg_name = active_vg.name
             layout.prop(props, "target_vg_name", text="Group")
         else:
             layout.label(text="No vertex groups", icon='ERROR')
