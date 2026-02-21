@@ -1,10 +1,17 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+import re
 import bpy
 from bpy.props import StringProperty, BoolProperty
 from bpy.types import Operator
 
-from ..utils import generate_new_action_name, get_exclude_patterns, get_include_patterns
+from ..utils import (
+    get_armature,
+    get_type_prefix,
+    generate_new_action_name,
+    get_exclude_patterns,
+    refresh_switcher,
+)
 
 
 class ARMA_OT_refresh_actions(Operator):
@@ -18,21 +25,13 @@ class ARMA_OT_refresh_actions(Operator):
 
         arma_props.action_list.clear()
 
-        # Get exclusion patterns
         prefix = arma_props.asset_prefix.strip()
         exclude_patterns = get_exclude_patterns(prefix, arma_props.asset_type)
 
         for action in sorted(bpy.data.actions, key=lambda x: x.name):
-            # Skip generated actions unless show_generated is enabled
-            should_skip = False
             if not arma_props.show_generated:
-                for pattern in exclude_patterns:
-                    if action.name.startswith(pattern):
-                        should_skip = True
-                        break
-
-            if should_skip:
-                continue
+                if any(action.name.startswith(p) for p in exclude_patterns):
+                    continue
 
             item = arma_props.action_list.add()
             item.name = action.name
@@ -51,12 +50,9 @@ class ARMA_OT_select_all_actions(Operator):
     select_all: BoolProperty(default=True)
 
     def execute(self, context):
-        scene = context.scene
-        arma_props = scene.arma_nla_props
-
+        arma_props = context.scene.arma_nla_props
         for item in arma_props.action_list:
             item.selected = self.select_all
-
         action_word = "Selected" if self.select_all else "Deselected"
         self.report({'INFO'}, f"{action_word} all actions")
         return {'FINISHED'}
@@ -72,15 +68,7 @@ class ARMA_OT_process_nla(Operator):
         scene = context.scene
         arma_props = scene.arma_nla_props
 
-        armature = None
-        if context.active_object and context.active_object.type == 'ARMATURE':
-            armature = context.active_object
-        else:
-            for obj in scene.objects:
-                if obj.type == 'ARMATURE':
-                    armature = obj
-                    break
-
+        armature = get_armature(context)
         if not armature:
             self.report({'ERROR'}, "No armature found. Please select an armature object.")
             return {'CANCELLED'}
@@ -89,64 +77,61 @@ class ARMA_OT_process_nla(Operator):
             armature.animation_data_create()
 
         selected_actions = [item for item in arma_props.action_list if item.selected]
-
         if not selected_actions:
             self.report({'ERROR'}, "No actions selected")
             return {'CANCELLED'}
 
-        processed_count = 0
-        skipped_count = 0
-        error_count = 0
         prefix = arma_props.asset_prefix.strip()
         asset_type = arma_props.asset_type
 
-        for i, item in enumerate(selected_actions):
-            action_name = item.original_name
-            action = bpy.data.actions.get(action_name)
+        # Save state so we can restore or redirect after the loop
+        original_action = armature.animation_data.action
+        first_new_action = None
 
+        processed_count = 0
+        skipped_count = 0
+        error_count = 0
+
+        for item in selected_actions:
+            action = bpy.data.actions.get(item.original_name)
             if not action:
                 error_count += 1
                 continue
 
             try:
-                new_name = generate_new_action_name(action_name, prefix, asset_type)
+                new_name = generate_new_action_name(item.original_name, prefix, asset_type)
 
                 if bpy.data.actions.get(new_name):
                     skipped_count += 1
                     continue
 
-                # Push down to NLA
+                # Push original action down to an NLA track
                 armature.animation_data.action = action
-
                 track_name = f"{new_name}_track"
                 track = armature.animation_data.nla_tracks.new()
                 track.name = track_name
-
                 strip = track.strips.new(action.name, int(action.frame_range[0]), action)
-                strip.name = f"ref_{action_name}"
+                strip.name = f"ref_{item.original_name}"
                 strip.blend_type = 'COMBINE'
-
                 armature.animation_data.action = None
 
-                # Create new editable action
+                # Create the new blank editable action
                 new_action = bpy.data.actions.new(new_name)
                 new_action.use_fake_user = True
 
-                armature.animation_data.action = new_action
-
-                # Mute other tracks
-                for other_track in armature.animation_data.nla_tracks:
-                    if other_track != track:
-                        other_track.mute = True
-                    else:
-                        other_track.mute = False
-
                 processed_count += 1
+                if first_new_action is None:
+                    first_new_action = new_action
 
             except Exception as e:
-                print(f"Error processing {action_name}: {str(e)}")
+                print(f"Error processing {item.original_name}: {str(e)}")
                 error_count += 1
-                continue
+
+        # Set active action based on the "Set First as Active" flag
+        if processed_count > 0 and arma_props.set_active_action and first_new_action:
+            armature.animation_data.action = first_new_action
+        else:
+            armature.animation_data.action = original_action
 
         result_msg = f"Processed: {processed_count}, Skipped: {skipped_count}, Errors: {error_count}"
 
@@ -157,9 +142,7 @@ class ARMA_OT_process_nla(Operator):
         else:
             self.report({'ERROR'}, f"No actions processed. {result_msg}")
 
-        # Auto-refresh switcher
-        bpy.ops.arma.update_switcher()
-
+        refresh_switcher(scene, context)
         return {'FINISHED'}
 
 
@@ -172,17 +155,7 @@ class ARMA_OT_switch_animation(Operator):
     action_name: StringProperty(default="")
 
     def execute(self, context):
-        scene = context.scene
-
-        armature = None
-        if context.active_object and context.active_object.type == 'ARMATURE':
-            armature = context.active_object
-        else:
-            for obj in scene.objects:
-                if obj.type == 'ARMATURE':
-                    armature = obj
-                    break
-
+        armature = get_armature(context)
         if not armature or not armature.animation_data:
             self.report({'ERROR'}, "No armature with animation data found")
             return {'CANCELLED'}
@@ -192,10 +165,8 @@ class ARMA_OT_switch_animation(Operator):
             self.report({'ERROR'}, f"Action '{self.action_name}' not found")
             return {'CANCELLED'}
 
-        # Set active action
         armature.animation_data.action = action
 
-        # Find and select the corresponding track
         target_track_name = f"{self.action_name}_track"
         target_track = None
 
@@ -203,20 +174,15 @@ class ARMA_OT_switch_animation(Operator):
             if track.name == target_track_name:
                 target_track = track
                 track.mute = False
-                # Select this track in NLA editor
                 track.select = True
             else:
                 track.mute = True
-                # Deselect other tracks
                 track.select = False
 
-        # Set the target track as active (this makes it highlighted in NLA editor)
         if target_track:
             armature.animation_data.nla_tracks.active = target_track
 
-        # Update switcher to refresh highlighting
-        bpy.ops.arma.update_switcher()
-
+        refresh_switcher(context.scene, context)
         self.report({'INFO'}, f"Switched to: {self.action_name}")
         return {'FINISHED'}
 
@@ -239,41 +205,19 @@ class ARMA_OT_create_new_action(Operator):
     def draw(self, context):
         layout = self.layout
         arma_props = context.scene.arma_nla_props
-
         layout.prop(self, "action_name")
 
-        # Preview the full name
         if arma_props.asset_prefix:
             prefix = arma_props.asset_prefix.strip()
-            asset_type = arma_props.asset_type
-
-            if asset_type == 'WEAPON':
-                full_name = f"Pl_{prefix}_{self.action_name}"
-            elif asset_type == 'VEHICLE':
-                full_name = f"v_{prefix}_{self.action_name}"
-            elif asset_type == 'PROP':
-                full_name = f"prop_{prefix}_{self.action_name}"
-            else:  # CUSTOM
-                full_name = f"{prefix}_{self.action_name}"
-
+            full_name = f"{get_type_prefix(arma_props.asset_type, prefix)}{self.action_name}"
             box = layout.box()
             box.label(text="Will create:", icon='INFO')
             box.label(text=full_name)
 
     def execute(self, context):
-        scene = context.scene
-        arma_props = scene.arma_nla_props
+        arma_props = context.scene.arma_nla_props
 
-        # Find armature
-        armature = None
-        if context.active_object and context.active_object.type == 'ARMATURE':
-            armature = context.active_object
-        else:
-            for obj in scene.objects:
-                if obj.type == 'ARMATURE':
-                    armature = obj
-                    break
-
+        armature = get_armature(context)
         if not armature:
             self.report({'ERROR'}, "No armature found. Please select an armature object.")
             return {'CANCELLED'}
@@ -281,41 +225,26 @@ class ARMA_OT_create_new_action(Operator):
         if not armature.animation_data:
             armature.animation_data_create()
 
-        # Generate full action name with prefix
         prefix = arma_props.asset_prefix.strip()
-        asset_type = arma_props.asset_type
-
         if not prefix:
             self.report({'ERROR'}, "Please set an asset prefix first")
             return {'CANCELLED'}
 
-        if asset_type == 'WEAPON':
-            full_name = f"Pl_{prefix}_{self.action_name}"
-        elif asset_type == 'VEHICLE':
-            full_name = f"v_{prefix}_{self.action_name}"
-        elif asset_type == 'PROP':
-            full_name = f"prop_{prefix}_{self.action_name}"
-        else:  # CUSTOM
-            full_name = f"{prefix}_{self.action_name}"
+        full_name = f"{get_type_prefix(arma_props.asset_type, prefix)}{self.action_name}"
 
-        # Check if action already exists
         if bpy.data.actions.get(full_name):
             self.report({'ERROR'}, f"Action '{full_name}' already exists")
             return {'CANCELLED'}
 
-        # Create new blank action
         new_action = bpy.data.actions.new(full_name)
         new_action.use_fake_user = True
 
-        # Create NLA track
         track_name = f"{full_name}_track"
         track = armature.animation_data.nla_tracks.new()
         track.name = track_name
 
-        # Set as active action
         armature.animation_data.action = new_action
 
-        # Mute other tracks, select only this track
         for other_track in armature.animation_data.nla_tracks:
             if other_track == track:
                 other_track.mute = False
@@ -324,13 +253,49 @@ class ARMA_OT_create_new_action(Operator):
                 other_track.mute = True
                 other_track.select = False
 
-        # Set as active track
         armature.animation_data.nla_tracks.active = track
 
-        # Refresh switcher
-        bpy.ops.arma.update_switcher()
-
+        refresh_switcher(context.scene, context)
         self.report({'INFO'}, f"Created: {full_name}")
+        return {'FINISHED'}
+
+
+class ARMA_OT_delete_action(Operator):
+    bl_idname = "arma.delete_action"
+    bl_label = "Delete Action"
+    bl_description = "Delete this generated action and its NLA reference track"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    action_name: StringProperty(default="")
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_confirm(self, event)
+
+    def execute(self, context):
+        action = bpy.data.actions.get(self.action_name)
+        if not action:
+            self.report({'ERROR'}, f"Action '{self.action_name}' not found")
+            return {'CANCELLED'}
+
+        armature = get_armature(context)
+        if armature and armature.animation_data:
+            # Clear active action if it's the one being deleted
+            if armature.animation_data.action == action:
+                armature.animation_data.action = None
+            # Remove the corresponding NLA reference track
+            track_name = f"{self.action_name}_track"
+            tracks_to_remove = [
+                t for t in armature.animation_data.nla_tracks
+                if t.name == track_name
+            ]
+            for track in tracks_to_remove:
+                armature.animation_data.nla_tracks.remove(track)
+
+        action.use_fake_user = False
+        bpy.data.actions.remove(action)
+
+        refresh_switcher(context.scene, context)
+        self.report({'INFO'}, f"Deleted: {self.action_name}")
         return {'FINISHED'}
 
 
@@ -340,48 +305,7 @@ class ARMA_OT_update_switcher(Operator):
     bl_description = "Update the Quick Animation Switcher list"
 
     def execute(self, context):
-        scene = context.scene
-        arma_props = scene.arma_nla_props
-
-        arma_props.switcher_actions.clear()
-
-        prefix = arma_props.asset_prefix.strip()
-        asset_type = arma_props.asset_type
-        search_term = arma_props.search_filter.lower()
-
-        if not prefix:
-            return {'FINISHED'}
-
-        # Get patterns to INCLUDE (these are the generated actions we want to show)
-        include_patterns = get_include_patterns(prefix, asset_type)
-
-        current_action = None
-        if context.active_object and context.active_object.type == 'ARMATURE':
-            if context.active_object.animation_data and context.active_object.animation_data.action:
-                current_action = context.active_object.animation_data.action.name
-
-        for action in sorted(bpy.data.actions, key=lambda x: x.name):
-            # Check if action matches our patterns (generated actions)
-            matches = False
-            for pattern in include_patterns:
-                if action.name.startswith(pattern):
-                    matches = True
-                    break
-
-            if not matches:
-                continue
-
-            # Apply search filter
-            if search_term and search_term not in action.name.lower():
-                continue
-
-            item = arma_props.switcher_actions.add()
-            item.name = action.name
-            item.action_name = action.name
-            item.is_active = (action.name == current_action)
-            item.has_fake_user = action.use_fake_user
-            item.track_name = f"{action.name}_track"
-
+        refresh_switcher(context.scene, context)
         return {'FINISHED'}
 
 
@@ -391,5 +315,42 @@ class ARMA_OT_clear_search(Operator):
     bl_description = "Clear the search filter"
 
     def execute(self, context):
+        # Setting the property triggers the update callback which calls refresh_switcher
         context.scene.arma_nla_props.search_filter = ""
+        return {'FINISHED'}
+
+
+class ARMA_OT_cleanup_export_duplicates(Operator):
+    bl_idname = "arma.cleanup_export_duplicates"
+    bl_label = "Clean Up Export Duplicates"
+    bl_description = (
+        "Remove .001/.002 action copies left behind by the Enfusion TXA exporter. "
+        "Only removes a copy when its base-name action also exists"
+    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    _suffix_re = re.compile(r'^(.+)\.\d{3,}$')
+
+    def execute(self, context):
+        to_remove = []
+        for action in bpy.data.actions:
+            match = self._suffix_re.match(action.name)
+            if match and match.group(1) in bpy.data.actions:
+                to_remove.append(action)
+
+        if not to_remove:
+            self.report({'INFO'}, "No export duplicate actions found")
+            return {'FINISHED'}
+
+        for action in to_remove:
+            # Clear from any armature that might still reference it
+            armature = get_armature(context)
+            if armature and armature.animation_data:
+                if armature.animation_data.action == action:
+                    armature.animation_data.action = None
+            action.use_fake_user = False
+            bpy.data.actions.remove(action)
+
+        refresh_switcher(context.scene, context)
+        self.report({'INFO'}, f"Removed {len(to_remove)} duplicate action(s)")
         return {'FINISHED'}

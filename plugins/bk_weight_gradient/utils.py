@@ -66,10 +66,15 @@ def _sync_control_points(props):
 def _ensure_anchors(props):
     """Make sure the anchors collection matches anchor_count (e.g. on first access)."""
     n = props.anchor_count
+    was_empty = len(props.anchors) == 0
     while len(props.anchors) < n:
         props.anchors.add()
     while len(props.anchors) > n:
         props.anchors.remove(len(props.anchors) - 1)
+    # On first creation set proper default weights (1.0 → 0.0 for n=2, etc.)
+    if was_empty:
+        for i, a in enumerate(props.anchors):
+            a.weight = 1.0 if n == 1 else round(1.0 - i / (n - 1), 4)
 
 
 def _build_stops(props):

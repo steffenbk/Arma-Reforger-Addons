@@ -4,6 +4,8 @@ import bpy
 from bpy.props import StringProperty, BoolProperty, CollectionProperty, EnumProperty
 from bpy.types import PropertyGroup
 
+from .utils import refresh_switcher
+
 
 class SwitcherActionItem(PropertyGroup):
     name: StringProperty()
@@ -40,7 +42,7 @@ class ArmaReforgerNLAProperties(PropertyGroup):
 
     set_active_action: BoolProperty(
         name="Set First as Active",
-        description="Set the first processed action as the active action",
+        description="After processing, set the first new action as the active action",
         default=True
     )
 
@@ -51,12 +53,12 @@ class ArmaReforgerNLAProperties(PropertyGroup):
         default=False
     )
 
-    # Search functionality
+    # Search functionality — uses refresh_switcher directly to avoid bpy.ops in callbacks
     search_filter: StringProperty(
         name="Search",
         description="Filter animations by name",
         default="",
-        update=lambda self, context: bpy.ops.arma.update_switcher()
+        update=lambda self, context: refresh_switcher(context.scene, context)
     )
 
     action_list: CollectionProperty(type=ActionListItem)
