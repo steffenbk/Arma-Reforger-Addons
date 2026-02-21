@@ -11,7 +11,7 @@ selected vertices for fast, precise weight painting.
 bl_info = {
     "name": "BK Weight Gradient",
     "author": "steffenbk",
-    "version": (2, 2, 2),
+    "version": (2, 2, 3),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > BK Tools",
     "description": "Apply weight gradients between anchor vertices with selectable curves",
@@ -45,26 +45,45 @@ def _wg_load_post(_dummy=None):
 
 
 _wg_vg_sync_guard = False
+_wg_sync_pending = False
 
 
 @bpy.app.handlers.persistent
 def _wg_sync_active_vg(scene, depsgraph):
-    """Sync the plugin's Group selector when the active vertex group changes."""
-    global _wg_vg_sync_guard
-    if _wg_vg_sync_guard:
+    """Schedule a timer to sync the Group selector (depsgraph context is read-only)."""
+    global _wg_sync_pending, _wg_vg_sync_guard
+    if _wg_vg_sync_guard or _wg_sync_pending:
         return
     try:
         obj = bpy.context.active_object
         if not (obj and obj.type == 'MESH' and obj.vertex_groups):
             return
-        props = scene.weight_gradient
         active_vg = obj.vertex_groups.active
-        if active_vg and props.target_vg_name != active_vg.name:
+        if not active_vg:
+            return
+        if scene.weight_gradient.target_vg_name == active_vg.name:
+            return
+        _wg_sync_pending = True
+        scene_name = scene.name
+        vg_name = active_vg.name
+
+        def _do_sync():
+            global _wg_sync_pending, _wg_vg_sync_guard
             _wg_vg_sync_guard = True
-            props.target_vg_name = active_vg.name
-            _wg_vg_sync_guard = False
+            try:
+                s = bpy.data.scenes.get(scene_name)
+                if s:
+                    s.weight_gradient.target_vg_name = vg_name
+            except Exception:
+                pass
+            finally:
+                _wg_vg_sync_guard = False
+                _wg_sync_pending = False
+            return None
+
+        bpy.app.timers.register(_do_sync, first_interval=0.0)
     except Exception:
-        _wg_vg_sync_guard = False
+        _wg_sync_pending = False
 
 
 def register():
