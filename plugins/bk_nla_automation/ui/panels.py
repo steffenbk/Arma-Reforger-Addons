@@ -9,15 +9,21 @@ from ..utils import generate_new_action_name, get_include_patterns
 class ARMA_UL_switcher_list(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
         if self.layout_type in {'DEFAULT', 'COMPACT'}:
+            row = layout.row(align=True)
+
             if item.is_active:
-                layout.alert = True
                 icon = 'RADIOBUT_ON'
+                name_row = row.row()
+                name_row.alert = True
+                props = name_row.operator("arma.switch_animation", text=item.name, icon=icon, emboss=False)
             else:
                 icon = 'RADIOBUT_OFF'
+                props = row.operator("arma.switch_animation", text=item.name, icon=icon, emboss=False)
 
-            # Switch button with icon indicating active state
-            props = layout.operator("arma.switch_animation", text=item.name, icon=icon, emboss=False)
             props.action_name = item.action_name
+
+            del_props = row.operator("arma.delete_action", text="", icon='X', emboss=False)
+            del_props.action_name = item.action_name
 
 
 class ARMA_UL_action_list(bpy.types.UIList):
@@ -53,7 +59,6 @@ class ARMA_PT_nla_panel(Panel):
         # Asset Settings
         box = layout.box()
         box.label(text="Asset Settings", icon='SETTINGS')
-
         box.prop(arma_props, "asset_type", text="Type")
         box.prop(arma_props, "asset_prefix", text="Prefix")
         box.prop(arma_props, "set_active_action")
@@ -77,7 +82,6 @@ class ARMA_PT_nla_panel(Panel):
                 arma_props, "action_list_index",
                 rows=6
             )
-
             selected_count = sum(1 for item in arma_props.action_list if item.selected)
             box.label(text=f"Selected: {selected_count}/{len(arma_props.action_list)}", icon='INFO')
         else:
@@ -110,7 +114,6 @@ class ARMA_PT_nla_panel(Panel):
                 arma_props, "switcher_index",
                 rows=8, maxrows=20
             )
-
             total_count = len(arma_props.switcher_actions)
             box.label(text=f"{total_count} animations", icon='INFO')
         else:
@@ -131,6 +134,7 @@ class ARMA_PT_nla_panel(Panel):
         box = layout.box()
         box.label(text="Utilities", icon='TOOL_SETTINGS')
         box.operator("arma.create_new_action", text="Create New Action", icon='ADD')
+        box.operator("arma.cleanup_export_duplicates", text="Clean Up Export Duplicates", icon='TRASH')
 
 
 classes = (

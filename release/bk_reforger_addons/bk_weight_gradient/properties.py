@@ -66,6 +66,15 @@ def _on_mirror_toggle(props, context):
     _mirror_updating = False
 
 
+def _on_curve_mode_update(self, context):
+    """When switching to Curve Graph, ensure the brush exists and expand the editor."""
+    if self.curve_mode == 'CURVE_GRAPH':
+        from . import curve_utils
+        if not bpy.data.brushes.get(curve_utils._WG_BRUSH_NAME):
+            curve_utils._ensure_curve_mapping()
+        self.show_curve_editor = True
+
+
 def _on_segments_update(self, context):
     """Resize the control_points collection when segments count changes."""
     n_needed = self.segments
@@ -127,6 +136,23 @@ class WG_SavedSelection(PropertyGroup):
     group_name: StringProperty(name="Group", default="")
 
 
+class WG_FullPreset(PropertyGroup):
+    """Stores a complete snapshot of gradient settings (not vertex data)."""
+    name: StringProperty(name="Name", default="Preset")
+    gradient_source: StringProperty(default="ANCHORS")
+    gradient_axis: StringProperty(default="Z")
+    anchor_count: IntProperty(default=2)
+    anchor_weights_json: StringProperty(default="[]")
+    curve_mode: StringProperty(default="SIMPLE")
+    weight_offset: FloatProperty(default=0.0, min=-1.0, max=1.0)
+    segments: IntProperty(default=0)
+    control_points_json: StringProperty(default="[]")
+    gradient_noise: FloatProperty(default=0.0)
+    simple_shape: FloatProperty(default=0.0)
+    simple_start: FloatProperty(default=1.0)
+    simple_end: FloatProperty(default=0.0)
+
+
 def _on_anchor_count_update(self, context):
     """Grow or shrink the anchors collection to match anchor_count."""
     n = self.anchor_count
@@ -181,26 +207,66 @@ class WeightGradientProperties(PropertyGroup):
     curve_mode: EnumProperty(
         name="Mode",
         items=[
+            ('SIMPLE',         "Simple",         "Quick linear gradient with a single shape slider"),
             ('CONTROL_POINTS', "Control Points",
              "Shape the gradient using manually placed weight stops"),
             ('CURVE_GRAPH', "Curve Graph",
              "Draw the gradient shape using a graphical curve editor"),
         ],
-        default='CONTROL_POINTS',
+        default='SIMPLE',
+        update=_on_curve_mode_update,
     )
 
-    curve_power: FloatProperty(
-        name="Power", default=0.0, min=0.0, max=9.0,
+    weight_offset: FloatProperty(
+        name="Offset", default=0.0, min=-1.0, max=1.0,
         description=(
-            "Post-process power boost applied to the final weight. "
-            "0 = no effect, higher = slower start then rush at end"
+            "Additive offset applied to every final weight after the gradient is computed. "
+            "Positive = shift weights up, negative = shift weights down. Clamped 0–1."
+        ),
+    )
+
+    gradient_noise: FloatProperty(
+        name="Noise", default=0.0, min=0.0, max=0.5,
+        description=(
+            "Add random variation to the gradient — jitters each vertex's "
+            "position along the gradient before sampling the weight"
         ),
     )
 
     show_curve_editor: BoolProperty(
         name="Show Curve Editor",
-        default=False,
+        default=True,
         description="Expand the custom curve editor panel",
+    )
+
+    curve_symmetry: BoolProperty(
+        name="Symmetric",
+        default=False,
+        description=(
+            "Fold the gradient so the curve applies symmetrically to both halves — "
+            "useful for cylinders or any mesh that should peak in the middle"
+        ),
+    )
+
+    simple_start: FloatProperty(
+        name="Start",
+        default=1.0, min=0.0, max=1.0,
+        description="Weight value at the start of the gradient (Anchor 1 side)",
+    )
+
+    simple_end: FloatProperty(
+        name="End",
+        default=0.0, min=0.0, max=1.0,
+        description="Weight value at the end of the gradient (Anchor 2 side)",
+    )
+
+    simple_shape: FloatProperty(
+        name="Shape",
+        default=0.0, min=-1.0, max=1.0,
+        description=(
+            "Shape of the gradient curve: 0 = linear, "
+            "negative = ease out (fast start), positive = ease in (slow start)"
+        ),
     )
 
     saved_curves: CollectionProperty(type=WG_SavedCurve)
@@ -241,6 +307,26 @@ class WeightGradientProperties(PropertyGroup):
         update=lambda self, ctx: _on_mirror_toggle(self, ctx),
     )
 
+    # Settings presets
+    saved_full_presets: CollectionProperty(type=WG_FullPreset)
+    active_full_preset_index: IntProperty(name="Active Preset", default=0)
+    show_full_presets: BoolProperty(name="Settings Presets", default=False)
+
+    # Adjust weights
+    show_adjust: BoolProperty(name="Adjust Weights", default=False)
+    weight_adjust: FloatProperty(
+        name="Adjust",
+        default=0.0, min=-1.0, max=1.0,
+        description="Amount to add (positive) or subtract (negative) from selected vertex weights",
+    )
+
+    # Last gradient selection
+    last_gradient_indices_json: StringProperty(
+        name="Last Gradient Indices",
+        default="",
+        description="JSON list of vertex indices painted by the last Apply Gradient",
+    )
+
 
 classes = (
     WG_ControlPoint,
@@ -249,5 +335,6 @@ classes = (
     WG_SavedAnchorSet,
     WG_SavedCurve,
     WG_SavedSelection,
+    WG_FullPreset,
     WeightGradientProperties,
 )
