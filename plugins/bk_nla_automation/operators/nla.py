@@ -178,13 +178,9 @@ class ARMA_OT_switch_animation(Operator):
             else:
                 track.mute = True
                 track.select = False
-                for strip in track.strips:
-                    strip.select = False
 
         if target_track:
             armature.animation_data.nla_tracks.active = target_track
-            for strip in target_track.strips:
-                strip.select = True
 
         for area in context.screen.areas:
             if area.type == 'NLA_EDITOR':
@@ -227,16 +223,11 @@ class ARMA_OT_edit_stash_action(Operator):
 
         armature.animation_data.action = stash_action
 
-        # Highlight the stash track and its strip
         for track in armature.animation_data.nla_tracks:
             if track == target_track:
                 track.select = True
-                for strip in track.strips:
-                    strip.select = True
             else:
                 track.select = False
-                for strip in track.strips:
-                    strip.select = False
 
         armature.animation_data.nla_tracks.active = target_track
 
