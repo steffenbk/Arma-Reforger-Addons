@@ -186,6 +186,10 @@ class ARMA_OT_switch_animation(Operator):
             for strip in target_track.strips:
                 strip.select = True
 
+        for area in context.screen.areas:
+            if area.type == 'NLA_EDITOR':
+                area.tag_redraw()
+
         refresh_switcher(context.scene, context)
         self.report({'INFO'}, f"Switched to: {self.action_name}")
         return {'FINISHED'}
@@ -235,6 +239,11 @@ class ARMA_OT_edit_stash_action(Operator):
                     strip.select = False
 
         armature.animation_data.nla_tracks.active = target_track
+
+        for area in context.screen.areas:
+            if area.type == 'NLA_EDITOR':
+                area.tag_redraw()
+
         refresh_switcher(context.scene, context)
         self.report({'INFO'}, f"Editing stash action: {stash_action.name}")
         return {'FINISHED'}
