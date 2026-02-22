@@ -3,7 +3,7 @@
 bl_info = {
     "name": "BK NLA Automation",
     "author": "steffenbk",
-    "version": (2, 1, 0),
+    "version": (2, 2, 0),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > BK NLA",
     "description": "Automate NLA strip creation and action management for any Arma Reforger asset",

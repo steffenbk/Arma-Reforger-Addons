@@ -178,12 +178,65 @@ class ARMA_OT_switch_animation(Operator):
             else:
                 track.mute = True
                 track.select = False
+                for strip in track.strips:
+                    strip.select = False
 
         if target_track:
             armature.animation_data.nla_tracks.active = target_track
+            for strip in target_track.strips:
+                strip.select = True
 
         refresh_switcher(context.scene, context)
         self.report({'INFO'}, f"Switched to: {self.action_name}")
+        return {'FINISHED'}
+
+
+class ARMA_OT_edit_stash_action(Operator):
+    bl_idname = "arma.edit_stash_action"
+    bl_label = "Edit Stash Action"
+    bl_description = "Set the stashed reference action as the active action for editing"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    action_name: StringProperty(default="")
+
+    def execute(self, context):
+        armature = get_armature(context)
+        if not armature or not armature.animation_data:
+            self.report({'ERROR'}, "No armature with animation data found")
+            return {'CANCELLED'}
+
+        track_name = f"{self.action_name}_track"
+        target_track = None
+        for track in armature.animation_data.nla_tracks:
+            if track.name == track_name:
+                target_track = track
+                break
+
+        if not target_track or not target_track.strips:
+            self.report({'ERROR'}, f"No stash track found for '{self.action_name}'")
+            return {'CANCELLED'}
+
+        stash_action = target_track.strips[0].action
+        if not stash_action:
+            self.report({'ERROR'}, "No action found in stash track")
+            return {'CANCELLED'}
+
+        armature.animation_data.action = stash_action
+
+        # Highlight the stash track and its strip
+        for track in armature.animation_data.nla_tracks:
+            if track == target_track:
+                track.select = True
+                for strip in track.strips:
+                    strip.select = True
+            else:
+                track.select = False
+                for strip in track.strips:
+                    strip.select = False
+
+        armature.animation_data.nla_tracks.active = target_track
+        refresh_switcher(context.scene, context)
+        self.report({'INFO'}, f"Editing stash action: {stash_action.name}")
         return {'FINISHED'}
 
 
