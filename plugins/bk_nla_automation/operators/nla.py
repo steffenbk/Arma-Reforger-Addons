@@ -176,8 +176,10 @@ class ARMA_OT_switch_animation(Operator):
                 track.mute = False
                 track.select = True
             else:
-                track.mute = True
+                track.mute = False
                 track.select = False
+                for strip in track.strips:
+                    strip.select = False
 
         if target_track:
             armature.animation_data.nla_tracks.active = target_track
@@ -227,11 +229,15 @@ class ARMA_OT_edit_stash_action(Operator):
 
         for track in armature.animation_data.nla_tracks:
             if track == target_track:
+                track.mute = False
                 track.select = True
                 for strip in track.strips:
                     strip.select = True
             else:
+                track.mute = False
                 track.select = False
+                for strip in track.strips:
+                    strip.select = False
 
         armature.animation_data.nla_tracks.active = target_track
 
