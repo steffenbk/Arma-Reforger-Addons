@@ -11,6 +11,7 @@ from ..utils import (
     generate_new_action_name,
     get_exclude_patterns,
     refresh_switcher,
+    do_switch_animation,
 )
 
 
@@ -160,36 +161,11 @@ class ARMA_OT_switch_animation(Operator):
             self.report({'ERROR'}, "No armature with animation data found")
             return {'CANCELLED'}
 
-        action = bpy.data.actions.get(self.action_name)
-        if not action:
+        if not bpy.data.actions.get(self.action_name):
             self.report({'ERROR'}, f"Action '{self.action_name}' not found")
             return {'CANCELLED'}
 
-        armature.animation_data.action = action
-
-        target_track_name = f"{self.action_name}_track"
-        target_track = None
-
-        for track in armature.animation_data.nla_tracks:
-            if track.name == target_track_name:
-                target_track = track
-                track.mute = False
-                track.select = True
-            else:
-                track.mute = False
-                track.select = False
-                for strip in track.strips:
-                    strip.select = False
-
-        if target_track:
-            armature.animation_data.nla_tracks.active = target_track
-            for strip in target_track.strips:
-                strip.select = True
-
-        for area in context.screen.areas:
-            if area.type == 'NLA_EDITOR':
-                area.tag_redraw()
-
+        do_switch_animation(context, self.action_name)
         refresh_switcher(context.scene, context)
         self.report({'INFO'}, f"Switched to: {self.action_name}")
         return {'FINISHED'}

@@ -1,7 +1,7 @@
 bl_info = {
     "name": "BK Reforger Addons",
     "author": "steffenbk",
-    "version": (1, 2, 2),
+    "version": (1, 2, 6),
     "blender": (4, 2, 0),
     "description": "All-in-one Arma Reforger Blender tools by steffenbk",
     "category": "Object",

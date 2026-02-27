@@ -92,6 +92,43 @@ def get_include_patterns(prefix, asset_type):
     return get_exclude_patterns(prefix, asset_type)
 
 
+def do_switch_animation(context, action_name):
+    """Switch armature active action and manage NLA tracks. Caller is responsible for refresh_switcher."""
+    armature = get_armature(context)
+    if not armature or not armature.animation_data:
+        return False
+    action = bpy.data.actions.get(action_name)
+    if not action:
+        return False
+
+    armature.animation_data.action = action
+
+    target_track_name = f"{action_name}_track"
+    target_track = None
+
+    for track in armature.animation_data.nla_tracks:
+        if track.name == target_track_name:
+            target_track = track
+            track.mute = False
+            track.select = True
+        else:
+            track.mute = True
+            track.select = False
+            for strip in track.strips:
+                strip.select = False
+
+    if target_track:
+        armature.animation_data.nla_tracks.active = target_track
+        for strip in target_track.strips:
+            strip.select = True
+
+    for area in context.screen.areas:
+        if area.type == 'NLA_EDITOR':
+            area.tag_redraw()
+
+    return True
+
+
 def refresh_switcher(scene, context):
     """Populate switcher_actions from bpy.data.actions. Use instead of bpy.ops.arma.update_switcher."""
     arma_props = scene.arma_nla_props

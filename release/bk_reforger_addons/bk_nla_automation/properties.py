@@ -4,7 +4,15 @@ import bpy
 from bpy.props import StringProperty, BoolProperty, CollectionProperty, EnumProperty
 from bpy.types import PropertyGroup
 
-from .utils import refresh_switcher
+from .utils import refresh_switcher, do_switch_animation
+
+
+def _on_switcher_index_changed(props, context):
+    idx = props.switcher_index
+    if 0 <= idx < len(props.switcher_actions):
+        action_name = props.switcher_actions[idx].action_name
+        if do_switch_animation(context, action_name):
+            refresh_switcher(context.scene, context)
 
 
 class SwitcherActionItem(PropertyGroup):
@@ -65,7 +73,10 @@ class ArmaReforgerNLAProperties(PropertyGroup):
     action_list_index: bpy.props.IntProperty(default=0)
 
     switcher_actions: CollectionProperty(type=SwitcherActionItem)
-    switcher_index: bpy.props.IntProperty(default=-1)
+    switcher_index: bpy.props.IntProperty(
+        default=-1,
+        update=lambda self, context: _on_switcher_index_changed(self, context)
+    )
 
 
 classes = (
