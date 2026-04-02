@@ -63,6 +63,9 @@ class ARMA_PT_nla_panel(Panel):
         header, body = layout.panel("arma_nla_asset_settings", default_closed=False)
         header.label(text="Asset Settings", icon='SETTINGS')
         if body:
+            body.prop(arma_props, "target_armature", text="Armature", icon='ARMATURE_DATA')
+            if arma_props.asset_type != 'VEHICLE':
+                body.prop(arma_props, "secondary_armature", text="Secondary Rig", icon='ARMATURE_DATA')
             body.prop(arma_props, "asset_type", text="Type")
             body.prop(arma_props, "asset_prefix", text="Prefix")
             body.prop(arma_props, "set_active_action")

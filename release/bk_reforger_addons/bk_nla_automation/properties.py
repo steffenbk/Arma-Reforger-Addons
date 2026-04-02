@@ -3,7 +3,7 @@
 import bpy
 from bpy.props import (
     StringProperty, BoolProperty, CollectionProperty,
-    EnumProperty, FloatVectorProperty,
+    EnumProperty, FloatVectorProperty, PointerProperty,
 )
 from bpy.types import PropertyGroup
 
@@ -33,6 +33,20 @@ class ActionListItem(PropertyGroup):
 
 
 class ArmaReforgerNLAProperties(PropertyGroup):
+    target_armature: PointerProperty(
+        name="Armature",
+        description="Main armature the NLA plugin operates on. Set automatically on first Process",
+        type=bpy.types.Object,
+        poll=lambda self, obj: obj.type == 'ARMATURE',
+    )
+
+    secondary_armature: PointerProperty(
+        name="Secondary Rig",
+        description="Optional secondary armature (e.g. weapon, prop). When set, the active action is synced to it so its bone keyframes go into the same action",
+        type=bpy.types.Object,
+        poll=lambda self, obj: obj.type == 'ARMATURE',
+    )
+
     asset_prefix: StringProperty(
         name="Asset Prefix",
         description="Prefix for your asset (e.g., M50, UAZ469, Door01)",

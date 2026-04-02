@@ -5,7 +5,10 @@ import bpy
 
 
 def get_armature(context):
-    """Return the active armature, or the first armature in the scene."""
+    """Return the pinned target armature if set, else the active armature, else the first armature in the scene."""
+    arma_props = getattr(context.scene, 'arma_nla_props', None)
+    if arma_props and arma_props.target_armature:
+        return arma_props.target_armature
     if context.active_object and context.active_object.type == 'ARMATURE':
         return context.active_object
     for obj in context.scene.objects:
@@ -122,9 +125,19 @@ def do_switch_animation(context, action_name):
         for strip in target_track.strips:
             strip.select = True
 
-    for area in context.screen.areas:
-        if area.type == 'NLA_EDITOR':
-            area.tag_redraw()
+    # Sync the same action to the secondary armature so its bone keyframes
+    # go into the same action even when it becomes the active object.
+    arma_props = getattr(context.scene, 'arma_nla_props', None)
+    if arma_props and arma_props.secondary_armature:
+        secondary = arma_props.secondary_armature
+        if not secondary.animation_data:
+            secondary.animation_data_create()
+        secondary.animation_data.action = action
+
+    if context.screen:
+        for area in context.screen.areas:
+            if area.type == 'NLA_EDITOR':
+                area.tag_redraw()
 
     return True
 

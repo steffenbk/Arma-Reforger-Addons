@@ -97,6 +97,10 @@ class ARMA_OT_process_nla(Operator):
         prefix = arma_props.asset_prefix.strip()
         asset_type = arma_props.asset_type
 
+        # Pin this armature so the plugin keeps targeting it even when
+        # a weapon/secondary rig becomes the active object later.
+        arma_props.target_armature = armature
+
         # Save state so we can restore or redirect after the loop
         original_action = armature.animation_data.action
         first_new_action = None
@@ -127,6 +131,10 @@ class ARMA_OT_process_nla(Operator):
                 strip.name = f"ref_{item.original_name}"
                 strip.blend_type = 'COMBINE'
                 armature.animation_data.action = None
+
+                # Rename source action to mark it as a stash reference
+                action.name = f"_{item.original_name}"
+                action.use_fake_user = False
 
                 # Create the new blank editable action
                 new_action = bpy.data.actions.new(new_name)
@@ -237,9 +245,10 @@ class ARMA_OT_edit_stash_action(Operator):
 
         armature.animation_data.nla_tracks.active = target_track
 
-        for area in context.screen.areas:
-            if area.type == 'NLA_EDITOR':
-                area.tag_redraw()
+        if context.screen:
+            for area in context.screen.areas:
+                if area.type == 'NLA_EDITOR':
+                    area.tag_redraw()
 
         refresh_switcher(context.scene, context)
         self.report({'INFO'}, f"Editing stash action: {stash_action.name}")
