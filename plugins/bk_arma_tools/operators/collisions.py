@@ -3,6 +3,7 @@ import bmesh
 import math
 import re
 from mathutils import Vector
+from ..constants import get_mode
 
 
 class ARVEHICLES_OT_create_ucx_collision(bpy.types.Operator):
@@ -35,19 +36,20 @@ class ARVEHICLES_OT_create_ucx_collision(bpy.types.Operator):
         items=[
             ('Vehicle', "Vehicle", "Standard vehicle collision"),
             ('Collision_Vehicle', "Collision Vehicle", "Vehicle physics collision"),
+            ('WeaponFire', "WeaponFire", "Weapon fire collision (FireGeometry + Weapon)"),
             ('MineTrigger', "Mine Trigger", "Mine detection trigger (for wheels)"),
             ('FireGeo', "FireGeo", "Fire geometry"),
             ('Custom', "Custom", "Custom layer preset"),
         ],
         default='Vehicle'
     )
-    
+
     custom_layer_preset: bpy.props.StringProperty(
         name="Custom Layer",
         description="Custom layer preset name",
         default=""
     )
-    
+
     parent_to_bone: bpy.props.BoolProperty(
         name="Parent to Bone",
         description="Parent collision to a specific bone",
@@ -203,6 +205,8 @@ class ARVEHICLES_OT_create_ucx_collision(bpy.types.Operator):
             obj["usage"] = "MineTrigger"
         elif self.layer_preset == 'FireGeo':
             obj["usage"] = "FireGeo"
+        elif self.layer_preset == 'WeaponFire':
+            obj["usage"] = "WeaponFire"
         else:
             obj["usage"] = "Vehicle"
         
@@ -221,16 +225,18 @@ class ARVEHICLES_OT_create_ucx_collision(bpy.types.Operator):
                 self.report({'WARNING'}, f"Bone '{self.bone_name}' not found in armature")
     
     def invoke(self, context, event):
+        if get_mode(context) == "WEAPON":
+            self.layer_preset = 'WeaponFire'
         return context.window_manager.invoke_props_dialog(self, width=400)
-    
+
     def draw(self, context):
         layout = self.layout
-        
+
         layout.prop(self, "method")
-        
+
         if self.method == 'UCX':
             layout.prop(self, "target_faces")
-        
+
         layout.separator()
         layout.label(text="Collision Properties:", icon='SETTINGS')
         layout.prop(self, "layer_preset")
@@ -297,10 +303,11 @@ class ARVEHICLES_OT_create_firegeo_collision(bpy.types.Operator):
             bpy.ops.object.duplicate()
             dup_obj = context.selected_objects[0]
             
+            base_name = "weapon" if get_mode(context) == "WEAPON" else "vehicle"
             if len(mesh_objects) == 1:
-                dup_obj.name = "UTM_vehicle"
+                dup_obj.name = f"UTM_{base_name}"
             else:
-                dup_obj.name = f"UTM_vehicle_part_{idx}"
+                dup_obj.name = f"UTM_{base_name}_part_{idx}"
                 
             collision_objects.append(dup_obj)
             
@@ -343,8 +350,12 @@ class ARVEHICLES_OT_create_firegeo_collision(bpy.types.Operator):
             
             dup_obj.data.materials.clear()
             dup_obj.data.materials.append(mat)
-            dup_obj["layer_preset"] = "FireGeo"
-            dup_obj["usage"] = "FireGeo"
+            if get_mode(context) == "WEAPON":
+                dup_obj["layer_preset"] = "WeaponFire"
+                dup_obj["usage"] = "WeaponFire"
+            else:
+                dup_obj["layer_preset"] = "FireGeo"
+                dup_obj["usage"] = "FireGeo"
             
             total_faces += len(dup_obj.data.polygons)
         

@@ -49,6 +49,11 @@ class ARVEHICLES_OT_sort_into_collections(bpy.types.Operator):
         default=True,
         description="Hide all collections except LOD0"
     )
+    fold_collections: bpy.props.BoolProperty(
+        name="Fold Collections",
+        default=False,
+        description="Collapse all collections in the outliner after sorting"
+    )
 
     @classmethod
     def poll(cls, context):
@@ -94,6 +99,14 @@ class ARVEHICLES_OT_sort_into_collections(bpy.types.Operator):
                     if layer_col:
                         layer_col.hide_viewport = True
 
+        if self.fold_collections:
+            def _collapse_recursive(layer_col):
+                layer_col.is_expanded = False
+                for child in layer_col.children:
+                    _collapse_recursive(child)
+            for child in context.view_layer.layer_collection.children:
+                _collapse_recursive(child)
+
         self.report({'INFO'}, f"Sorted {sorted_count} objects into collections")
         return {'FINISHED'}
 
@@ -131,6 +144,7 @@ class ARVEHICLES_OT_batch_collider_setup(bpy.types.Operator):
             ('Vehicle',           "Vehicle",           "Standard vehicle collision"),
             ('VehicleFire',       "VehicleFire",       "Vehicle fire collision"),
             ('VehicleFireView',   "VehicleFireView",   "Vehicle fire view"),
+            ('WeaponFire',        "WeaponFire",        "Weapon fire collision (FireGeometry + Weapon)"),
             ('ItemFireView',      "ItemFireView",      "Item fire view"),
             ('Door',              "Door",              "Door collision"),
             ('DoorFireView',      "DoorFireView",      "Door fire view"),
