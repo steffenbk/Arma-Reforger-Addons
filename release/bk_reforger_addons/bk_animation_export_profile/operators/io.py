@@ -138,13 +138,14 @@ class ARPROFILE_OT_import_profile(Operator):
                         track = settings.tracks.add()
                         track.bone_name = parts[1]
                         track.parent_bone = parts[3]
-                        remaining = ' '.join(parts[5:])
-                        if 'TRA' in remaining:
-                            track.flags = 'TRA'
-                        elif 'TRD' in remaining:
-                            track.flags = 'TRD'
-                        elif 'TRG' in remaining:
-                            track.flags = 'TRG'
+                        # parts[5] holds the flags string
+                        flags_str = parts[5].strip()
+                        for flag in ('TRA', 'TRD', 'TRG', 'RD', 'RA', 'TA'):
+                            if flags_str == flag or flags_str.startswith(flag):
+                                track.flags = flag
+                                break
+
+                        remaining = line[line.index(parts[5]) + len(parts[5]):]
 
                         if '$genFn' in remaining:
                             track.use_gen_fn = True
@@ -152,6 +153,20 @@ class ARPROFILE_OT_import_profile(Operator):
                             gen_end = remaining.find('"', gen_start)
                             if gen_end > gen_start:
                                 track.gen_fn_name = remaining[gen_start:gen_end]
+
+                        if '$boneFn { "' in remaining:
+                            track.use_bone_fn = True
+                            fn_start = remaining.find('$boneFn { "') + 11
+                            fn_end = remaining.find('"', fn_start)
+                            if fn_end > fn_start:
+                                track.bone_fn_name = remaining[fn_start:fn_end]
+
+                        if '$boneFnLocal { "' in remaining:
+                            track.use_bone_fn_local = True
+                            fn_start = remaining.find('$boneFnLocal { "') + 16
+                            fn_end = remaining.find('"', fn_start)
+                            if fn_end > fn_start:
+                                track.bone_fn_local_name = remaining[fn_start:fn_end]
 
             self.report({'INFO'}, f"Imported {len(settings.tracks)} tracks from {os.path.basename(self.filepath)}")
 

@@ -105,7 +105,7 @@ class ARPROFILE_OT_remove_track(Operator):
         settings = context.scene.arprofile_settings
         if settings.tracks:
             settings.tracks.remove(settings.active_track_index)
-            settings.active_track_index = min(settings.active_track_index, len(settings.tracks) - 1)
+            settings.active_track_index = max(0, min(settings.active_track_index, len(settings.tracks) - 1))
         return {'FINISHED'}
 
 
